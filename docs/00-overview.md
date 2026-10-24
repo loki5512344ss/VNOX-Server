@@ -43,7 +43,7 @@ You run it, you own it.
 
 **Federated** — nodes can talk to each other. Your community isn't an island (Phase 3).
 
-**Encrypted** — all traffic is encrypted with ChaCha20-Poly1305 AEAD + X25519 ECDH key exchange. Forward secrecy by default.
+**Encrypted** - the control plane runs over TLS 1.3, voice over per-route ChaCha20-Poly1305 keys. Forward secrecy by default.
 
 **Plugin-first** — extend the platform with plugins via WebSocket RPC. Bots, moderation, automations. Sandboxed by design.
 

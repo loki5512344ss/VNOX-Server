@@ -214,5 +214,5 @@ with a migration guide.
 - [ ] `node.key` backup exists and is stored securely
 - [ ] `VNOX_LOGGING_LEVEL` is `info` or `warn` in production (not `trace`)
 - [ ] `[gateway.rate_limits]` are configured appropriately for your user base
-- [ ] TLS certificate is valid (or TOFU is acceptable for your use case)
+- [ ] TLS: either a CA certificate (`tls_cert_path`/`tls_key_path`) or the self-signed fingerprint (`data_dir/tls/fingerprint.txt`) is published to users; no TLS-terminating proxy in front of TCP 7600
 - [ ] Federation disabled if not needed (`[federation] enabled = false`)

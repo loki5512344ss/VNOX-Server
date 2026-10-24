@@ -1,6 +1,6 @@
 # Security
 
-> **Phase 1.1 status.** TCP traffic is encrypted with ChaCha20-Poly1305 AEAD.
+> **LNEx v3 status.** TCP traffic runs over TLS 1.3.
 > UDP voice path is still plaintext (Phase 2). See
 > [features/encryption.md](../05-features/encryption.md) for details.
 
@@ -11,7 +11,7 @@ The threat model covers:
 
 | Threat | Mitigated by |
 |--------|--------------|
-| MITM on client-server connection | LNEx packet encryption (ChaCha20-Poly1305) active on TCP |
+| MITM on client-server connection | TLS 1.3 with SPKI pinning / public CA, channel-bound Ed25519 auth |
 | MITM on UDP voice path | LNEx packet encryption (Phase 2; not active in v0.1.x) |
 | Rogue node in federation | Mutual keypair authentication on federation handshake (Phase 3) |
 | Identity spoofing | Ed25519 signature on every auth (challenge-response) |
@@ -31,47 +31,15 @@ The threat model covers:
 
 ## Encryption
 
-> **Phase 1.1 target.** See [features/encryption.md](../05-features/encryption.md) for the implementation plan.
-> Phase 1 uses JSON over plain TCP and raw Opus over UDP.
+TCP control traffic is protected by **TLS 1.3** (rustls, ALPN `vnox-lnex/3`). The earlier
+LNEx v2 per-frame ChaCha20-Poly1305 layer is removed. Trust model, certificate handling,
+channel binding and version bump: see [tls.md](tls.md).
 
-### LNEx packet encryption
-
-All LNEx packets (both TCP and UDP paths) are encrypted at the LNEx layer.
-
-Algorithm: **ChaCha20-Poly1305** (AEAD)
-
-- ChaCha20 for stream cipher
-- Poly1305 for authentication tag (16 bytes)
-- 96-bit nonce, derived from: `session_id || sequence`
-- Key derived from ECDH exchange during handshake (X25519)
-
-ChaCha20-Poly1305 is chosen over AES-GCM because:
-- constant-time on all platforms (no hardware AES requirement)
-- faster in software on hardware without AES-NI (common on ARM)
-- simpler nonce management
-
-### Key exchange
-
-During the LNEx handshake:
-
-1. Server sends its ephemeral X25519 public key in HELLO
-2. Client generates its own ephemeral X25519 keypair
-3. Both compute the shared secret via X25519 ECDH
-4. Shared secret is passed through HKDF-SHA256 to derive:
-   - client → server encryption key
-   - server → client encryption key
-
-Ephemeral keys are discarded after the session. This provides
-**forward secrecy** — compromising the long-term identity keypair
-does not expose past sessions.
-
-### TCP transport
-
-TCP connections additionally use TLS 1.3.
-LNEx packet encryption runs inside TLS — defense in depth.
-
-TLS certificate: self-signed by default, pinned on first connect (TOFU).
-Node operators may configure a proper CA-signed certificate.
+- Self-hosted servers: self-signed certificate (key = server identity), client pins the SPKI
+  SHA-256 fingerprint on first use and blocks any change.
+- Public CA certificates are accepted without a prompt.
+- Ed25519 client authentication is signed over a TLS exporter value so it cannot be relayed.
+- A TLS-terminating reverse proxy is not supported (it breaks the channel binding); use TCP passthrough.
 
 ### UDP transport
 
@@ -141,7 +109,7 @@ temporary ban depending on node configuration.
 
 ### Recommended hardening
 
-- run gateway behind a reverse proxy (nginx / caddy) for TLS termination
+- if a proxy is used, pass TCP through (no TLS termination)
 - restrict UDP port to known IP ranges if possible
 - enable fail2ban or equivalent on auth failure logs
 - back up the node keypair (used for federation identity)

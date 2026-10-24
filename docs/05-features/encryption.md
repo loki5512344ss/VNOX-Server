@@ -1,78 +1,44 @@
-# Encryption — Phase 1.1
+# Encryption
 
-> **Phase 1.1 status:** Fully implemented. ChaCha20-Poly1305 AEAD with X25519 ECDH + HKDF-SHA256 key exchange. Both TCP (control) and UDP (voice) paths are now encrypted. Forward secrecy via ephemeral session keys.
+> **Status (LNEx v3):** the TCP control plane is protected by **TLS 1.3** (rustls).
+> The UDP voice path is protected by per route ChaCha20-Poly1305 keys delivered over the
+> TLS control connection. The earlier custom X25519 + HKDF + ChaCha20-Poly1305 layer on
+> TCP (LNEx v2) was removed. Design and trust model: [02-protocol/tls.md](../02-protocol/tls.md).
 
-## Goal
+## Layers
 
-Replace all plaintext traffic (TCP + UDP) with ChaCha20-Poly1305 AEAD encryption.
-X25519 ECDH ephemeral key exchange during handshake for forward secrecy.
+| Path | Protection | Keys |
+|------|------------|------|
+| TCP control (chat, channels, auth) | TLS 1.3, ALPN `vnox-lnex/3`, no fallback | TLS handshake, server cert pinned by SPKI SHA-256 (TOFU) or a public CA |
+| Server authenticity | Ed25519 server identity signs HELLO over the TLS exporter (channel binding) | `server_identity.json` |
+| Client authenticity | Ed25519 client key signs AUTH over the same exporter | client identity |
+| UDP voice | ChaCha20-Poly1305 AEAD per route | random `c2s_key` / `s2c_key` sent in `VoiceSession` over TLS |
+| Direct messages E2EE (optional) | X25519 + HKDF + ChaCha20-Poly1305 between clients | per conversation keys, unchanged |
 
-✅ **COMPLETED in Phase 1.1**
+## What changed from v2
 
-## Key exchange (during HELLO handshake)
+- Removed: ephemeral X25519 exchange in HELLO/AUTH, HKDF session key derivation for TCP,
+  per frame ChaCha20-Poly1305 with the `ENCRYPTED` flag, `SessionCrypto` in gateway and client.
+- Added: mandatory TLS 1.3 listener and connector, certificate management, client trust store,
+  channel bound Ed25519 signatures.
+- Unchanged: UDP voice packet format, voice node, E2EE for direct messages, Ed25519 identities.
 
-1. Server generates ephemeral X25519 keypair per session
-2. Server sends public key in `HELLO` packet
-3. Client generates own ephemeral X25519 keypair
-4. Both compute shared secret via X25519 ECDH
-5. Shared secret → HKDF-SHA256 → two keys:
-   - `client→server` encryption key
-   - `server→client` encryption key
-6. Ephemeral keys discarded after session (forward secrecy)
+## Why TLS instead of a custom layer
 
-## Packet encryption
+- Reviewed, widely deployed handshake and record layer instead of a protocol we maintain.
+- Standard tooling and key lifecycle (Let's Encrypt works out of the box).
+- Forward secrecy, key updates and replay protection are provided by TLS 1.3.
 
-- Algorithm: **ChaCha20-Poly1305** (AEAD)
-- 96-bit nonce: `session_id || packet_sequence`
-- 16-byte Poly1305 authentication tag per packet
-- Applied to ALL packets on both TCP and UDP
+## Voice keys
 
-## Why ChaCha20-Poly1305 over AES-GCM
-
-- Constant-time on all platforms (no hardware AES requirement)
-- Faster in software on ARM (common for mobile — Phase 3)
-- Simpler nonce management (no IV collision risk)
-
-## Implementation plan
-
-### ✅ Client (DONE)
-- `client/src/net/crypto.rs` — SessionCrypto with ChaCha20-Poly1305
-- `client/src/net/voice.rs` — `build_packet()` encrypts voice payloads with c2s_key
-- `client/src/net/voice.rs` — `spawn_recv()` decrypts incoming voice with s2c_key
-- `client/src/net/session/session_loop.rs` — voice_seq counter for encryption nonces
-
-### ✅ Gateway (DONE)
-- `gateway/src/proto/crypto.rs` — X25519 ECDH, HKDF-SHA256, ChaCha20-Poly1305
-- `gateway/src/net/handshake.rs` — ephemeral key exchange in HELLO/AUTH
-- `gateway/src/net/io.rs` — TCP framing with encryption
-
-### ✅ Voice
-- `client/src/net/voice.rs` — encrypted voice packets on UDP (plaintext at rest in voice-node, encrypted on wire)
-- Voice-node treats packets as opaque bytes (transparent relay)
-- End-to-end encryption: client A → encrypted → voice-node → encrypted → client B
-
-## Nonce management
-
-Each session has a monotonic sequence counter:
-- Start at 0 on session establishment
-- Increment per packet (both directions independently)
-- Nonce = `session_id (8 bytes) || sequence (4 bytes)`
-- 12-byte nonce fits ChaCha20-Poly1305 standard
-
-## Key dependencies
-
-Already in `Cargo.toml` (workspace):
-- `chacha20poly1305 = "0.10"`
-- `x25519-dalek = { version = "2", features = ["static_secrets"] }`
-
-Need to add:
-- `hkdf = "0.12"` for key derivation
-- `sha2 = "0.10"` (HKDF dependency, likely already transitive)
+`VoiceSession` is delivered after the channel authorization check. Keys are random per
+route and never derived from the TCP session, so the UDP implementation did not need to
+change when the TCP layer was replaced.
 
 ## Testing
 
-- ✅ Unit test: encrypt → decrypt round-trip with known keys (`client/src/net/crypto.rs`)
-- ✅ Unit test: tampered ciphertext fails authentication 
-- ✅ Unit test: build_packet creates valid encrypted packets
-- Manual test: Run client + gateway + voice-node, join voice channel, verify packets encrypted
-- Wireshark: Capture UDP traffic, confirm it's not readable plaintext
+- Unit: SPKI fingerprint extraction, pin match and mismatch, unknown server, TLS 1.2 client
+  rejected, plaintext/v2 client gets an explicit error, channel binding signature replay rejected.
+- Integration: `VNOX_GATEWAY_BIN=... cargo test --test gateway_interop -- --ignored`
+  in `VNOX-Client`, including the first trust flow.
+- Voice: `cargo run --bin vnox-e2e-voice -- 127.0.0.1:7600 --trust-first-use` against `vnox-serverd`.

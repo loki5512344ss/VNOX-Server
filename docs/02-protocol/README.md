@@ -29,7 +29,7 @@ encryption, routing, identity, and federation.
 
 ## Version
 
-Current version: `LNEx v1`
+Current version: `LNEx v3` (TCP runs inside TLS 1.3, see [tls.md](tls.md)). There is no negotiation with older versions.
 
 Version is negotiated during handshake. Clients and servers advertise
 their supported versions. If no common version exists, the connection
@@ -83,3 +83,4 @@ Full state machine: see individual spec files.
 - [federation/README.md](federation/README.md) — node discovery, cross-node routing
 - [identity.md](identity.md) — keypair model, auth flow, permissions
 - [security.md](security.md) — encryption, threat model
+- [tls.md](tls.md) — TLS 1.3 control plane, trust model, LNEx v3 handshake

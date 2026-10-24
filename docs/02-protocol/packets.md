@@ -22,7 +22,7 @@ All LNEx packets share a common header, regardless of transport.
 
 ```
 bit 0  — COMPRESSED   payload is zstd compressed
-bit 1  — ENCRYPTED    payload is encrypted (ChaCha20-Poly1305)
+bit 1  — ENCRYPTED    reserved; must be 0 on TCP since LNEx v3 (TLS protects the stream)
 bit 2  — FRAGMENTED   this is a fragment of a larger payload
 bit 3  — LAST_FRAG    this is the last fragment
 bit 4  — ACK_REQ      sender requests acknowledgement (TCP path only)

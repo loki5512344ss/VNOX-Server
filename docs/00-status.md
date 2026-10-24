@@ -7,6 +7,12 @@ Last updated: 2026-10-24.
 
 ---
 
+## Update 2026-10 (LNEx v3, TLS 1.3)
+
+- TCP control plane is TLS 1.3 only (rustls); the custom X25519/HKDF/ChaCha20 TCP layer was removed (**breaking**, protocol `v3`). See [02-protocol/tls.md](02-protocol/tls.md).
+- Self-hosted trust model: certificate pinned by SPKI SHA-256 with trust on first use in the client, changed fingerprint is blocked; public CA certificates work without a prompt.
+- Ed25519 auth is bound to the TLS session (exporter), UDP voice unchanged.
+
 ## Update 2026-10 (protocol v2)
 
 - Signed v2 handshake and protobuf payloads between client and gateway (verified by `VNOX-Client/tests/gateway_interop.rs`).
@@ -74,7 +80,6 @@ Last updated: 2026-10-24.
 
 | Feature | Target phase |
 |---------|--------------|
-| TLS 1.3 on TCP | Phase 2 |
 | Seed phrase / encrypted keyfile export UI | Phase 2 |
 | Gateway to voice-node membership signaling | Phase 2 |
 | Protobuf payloads (replacing JSON) | Phase 2 |
@@ -90,11 +95,11 @@ Last updated: 2026-10-24.
 
 ## Security notes
 
-- **TCP control plane:** Encrypted with ChaCha20-Poly1305 (✅ Phase 1.1)
+- **TCP control plane:** TLS 1.3 only, channel-bound Ed25519 auth (LNEx v3)
 - **UDP voice data:** Encrypted with ChaCha20-Poly1305 (✅ Phase 1.1)
 - **Client auth:** Ed25519 challenge-response; identity proven, transport encrypted.
 - **Server pubkey:** Real (Ed25519), verified during handshake.
-- **Ephemeral keys:** X25519 ECDH with HKDF-SHA256 key derivation for forward secrecy.
+- **Forward secrecy on TCP:** provided by TLS 1.3. UDP voice keys are random per route and delivered over TLS.
 - **Voice node:** Transparent relay (does not decrypt voice — encrypted end-to-end between clients).
 - **Identity at rest:** Optional Argon2id passphrase + ChaCha20-Poly1305 AEAD vault (✅ Phase 2).
 - **Rate limiting:** Per-session token bucket on chat + DM (✅ Phase 2).

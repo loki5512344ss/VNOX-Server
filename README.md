@@ -72,7 +72,7 @@ Full architecture details: [docs/01-architecture.md](docs/01-architecture.md)
 
 ### Implemented
 - **Auth:** Ed25519 challenge-response, session tokens, reconnect with backoff
-- **Encryption:** ChaCha20-Poly1305 AEAD + X25519 ECDH key exchange + HKDF key derivation
+- **Encryption:** TLS 1.3 (rustls) on TCP with SPKI pinning, ChaCha20-Poly1305 on UDP voice
 - **Channels:** Create, delete, list; text and voice channel types
 - **Text chat:** Persistent history via SQLite, reactions, replies, edit, delete, typing indicators, read receipts
 - **Direct Messages:** 1:1 DMs with persistent history, unread badges, search
@@ -89,7 +89,6 @@ Full architecture details: [docs/01-architecture.md](docs/01-architecture.md)
 - **Keyfile export/import:** Encrypted or plain JSON keyfile with passphrase
 
 ### Planned
-- TLS 1.3 on TCP (Phase 2)
 - Protobuf wire format (Phase 2)
 - PostgreSQL backend (Phase 2)
 - Federation protocol (Phase 3)
@@ -107,7 +106,7 @@ Phase 1 is implemented. Not production ready.
 | Voice node     | UDP relay, voice packet routing, jitter buffer       |
 | Desktop client | Slint UI, net layer, audio pipeline (partial)        |
 | LNEx protocol  | Specified and implemented (JSON in Phase 1)          |
-| Encryption     | ChaCha20-Poly1305 AEAD + X25519 ECDH — DONE          |
+| Encryption     | TLS 1.3 (TCP) + ChaCha20-Poly1305 (UDP voice) - DONE  |
 | Federation     | Planned (Phase 3)                                    |
 | Mobile client  | Planned (Phase 3)                                    |
 

@@ -36,7 +36,7 @@ Goal: production-safe for small private communities.
 
 ### Encryption (Priority 1) ✅ DONE
 - [x] Replace plaintext with ChaCha20-Poly1305 on all packets
-- [x] X25519 ECDH key exchange during HELLO handshake
+- [x] X25519 ECDH key exchange during HELLO handshake (UDP/E2EE only; TCP moved to TLS 1.3 in LNEx v3)
 - [x] HKDF-SHA256 key derivation (client→server / server→client keys)
 - [x] Encrypted TCP (control) + UDP (voice) paths
 - [x] Forward secrecy via ephemeral session keys
@@ -152,7 +152,7 @@ Goal: typing indicators, read receipts, typing states.
 Goal: scalability, federation preparation, advanced security.
 
 ### Server
-- [ ] TLS 1.3 on TCP control plane
+- [x] TLS 1.3 on TCP control plane (LNEx v3, see 02-protocol/tls.md)
 - [ ] Permission system enforcement in gateway
 - [ ] Rate limiting refinement
 - [ ] PostgreSQL backend (sqlx support ready, config not exposed yet)

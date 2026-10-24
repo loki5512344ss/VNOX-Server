@@ -76,10 +76,11 @@ max_pps_per_user = 60
 # Generated automatically on first start if not present.
 keypair_path = "/var/lib/vnox/node.key"
 
-# TLS certificate for the TCP gateway.
-# If not set, a self-signed certificate is generated.
-# tls_cert = "/etc/vnox/tls/cert.pem"
-# tls_key  = "/etc/vnox/tls/key.pem"
+# TLS 1.3 is always on (LNEx v3). TLS keys live in the [gateway] section:
+#   tls_cert_path = "/etc/letsencrypt/live/chat.example.org/fullchain.pem"
+#   tls_key_path  = "/etc/letsencrypt/live/chat.example.org/privkey.pem"
+# Both unset: a self-signed certificate is generated in <data_dir>/tls/ and its
+# fingerprint is logged. See docs/02-protocol/tls.md.
 
 
 # ─── CHANNELS ──────────────────────────────────────────────────────────────

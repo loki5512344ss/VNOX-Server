@@ -5,6 +5,14 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Changed (breaking): LNEx v3, TLS 1.3 on the TCP control plane
+- The custom X25519 + HKDF + ChaCha20-Poly1305 layer on TCP is removed. The gateway listens with TLS 1.3 only (rustls, ALPN `vnox-lnex/3`); there is no plaintext, TLS 1.2 or LNEx v2 mode.
+- Protocol version bumped `v2` to `v3`. `Hello.server_eph_pubkey` and `Auth.client_eph_pubkey` are reserved. Old clients cannot connect and old gateways are refused by new clients with an explicit error.
+- Ed25519 server HELLO and client AUTH signatures now cover a TLS exporter value (channel binding) and cannot be replayed on another connection.
+- Certificate: auto generated on first start in `data_dir/tls/self-signed.pem` using the server identity key (fingerprint stable, no extra secret), or `tls_cert_path` / `tls_key_path` for a CA certificate. The SPKI SHA-256 fingerprint is logged and written to `data_dir/tls/fingerprint.txt`.
+- `gateway.tls_enabled = false` is now a startup error. UDP voice is unchanged.
+- Design: `docs/02-protocol/tls.md`.
+
 ### Added — Phase 2 guild member list + identity export/import + channel rate limit (fourth batch)
 
 #### Phase 2 guild member list with kick / role-assign UI (Phase E4)
