@@ -5,7 +5,7 @@
 ```
 ┌─────────────────────────────────────────────────────┐
 │                    VNOX Client                      │
-│              (Rust + egui + wgpu)                   │
+│              (Rust + Slint)                   │
 └────────────────────┬────────────────────────────────┘
                      │ LNEx v1
           ┌──────────┴──────────┐
@@ -104,7 +104,7 @@ Can run on the same machine as the gateway or separately.
 ### client
 
 Language: Rust
-UI: egui
+UI: Slint
 Renderer: wgpu
 Audio: cpal + rodio + opus
 Networking: tokio
@@ -151,7 +151,7 @@ Handles cross-node communication:
 |-----------|----------|----------|
 | Gateway | Rust | Tokio, serde, sqlx |
 | Voice node | Rust | opus, tokio |
-| Client | Rust | egui, wgpu, cpal, tokio |
+| Client | Rust | Slint, cpal, tokio |
 | Overlay | Rust | TBD |
 | Plugins | TypeScript | Deno / QuickJS |
 
@@ -175,7 +175,7 @@ without changing the wire framing (header stays identical).
 
 ```
 vnox/
-├── client/          # Desktop client (Rust + egui)
+├── client/          # Desktop client (Rust + Slint)
 ├── gateway/         # TCP gateway (Rust + Tokio)
 ├── voice-node/      # UDP voice relay (Rust)
 ├── federation/      # Federation layer (Phase 3)
@@ -259,7 +259,7 @@ client/src/
 │   ├── config.rs        # find() best StreamConfig for device
 │   ├── capture.rs       # cpal input → Opus encode → EncodedFrame channel
 │   └── playback.rs      # Opus decode → cpal output
-└── ui/                  # egui layout
+└── ui/                  # Slint layout
     ├── mod.rs           # VnoxApp, eframe::App impl, poll_net()
     ├── state.rs         # UiState, ConnState, Channel, ChatMessage
     ├── theme.rs         # color constants (BG_BASE, ACCENT, …)

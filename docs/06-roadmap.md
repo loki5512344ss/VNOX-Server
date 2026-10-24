@@ -62,11 +62,11 @@ See [features/direct-messages.md](05-features/direct-messages.md). **Backend and
 - [x] Makes VNOX safe for single-server deployment (OwnCord-style)
 
 ### UI Refresh
-- [x] Evaluate Slint vs improving egui design system — **staying on egui**
+- [x] Evaluate Slint vs egui: migrated to Slint
 - [x] Custom dark theme with accent color support (#E67E22 orange)
 - [x] Redesigned channel list and user bar
 - [x] Consistency pass across all settings panels
-- [ ] Slint migration plan exists at `docs/superpowers/plans/2026-05-31-slint-migration.md` (deferred to Phase 2+)
+- [x] Slint migration done (client UI is native Slint)
 
 ### Client Polish
 - [x] Audio device labels in settings (live cpal enumeration)

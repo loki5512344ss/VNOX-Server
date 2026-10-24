@@ -3,7 +3,18 @@
 This file describes what the repository actually does today.
 Protocol and security docs may describe future phases. When in doubt, trust this file.
 
-Last updated: 2026-06-29.
+Last updated: 2026-10-24.
+
+---
+
+## Update 2026-10 (protocol v2)
+
+- Signed v2 handshake and protobuf payloads between client and gateway (verified by `VNOX-Client/tests/gateway_interop.rs`).
+- Authenticated, encrypted UDP voice relay in voice-node.
+- Voice access is revoked when a channel is deleted, a member is kicked or permissions change.
+- Senders get acknowledgements for their own chat messages.
+- Channel webhooks, GitHub sign-in, hub service, screen sharing and media broadcast.
+- `cargo audit`: no known vulnerabilities in both workspaces (2026-10-24).
 
 ---
 
@@ -51,7 +62,7 @@ Last updated: 2026-06-29.
 | SDK crate | Present as a stub; not a usable public API yet. |
 | Federation crate | Stub only (`// TODO`). |
 | RNNoise | Feature-gated, no-op stub by default. Enable with `--features rnnoise`. |
-| Slint migration | Plan exists at `docs/superpowers/plans/2026-05-31-slint-migration.md`; deferred — egui UI continues to be improved. |
+| Slint migration | Done. The client UI is Slint (RU/EN localization, themes, settings). |
 | Server-side channel creation | Client-side channels work locally; gateway still needs `ChannelCreate` packet + storage (Phase 2). |
 | Identity export/import UI | Vault API is ready (`identity::save(identity, Some(passphrase))`), but no UI modal yet. |
 
