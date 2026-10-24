@@ -28,3 +28,11 @@ Approved logo is the V connection mark. The Hub serves SVG and PNG; mail uses a 
 - Public `/v1/info` reports GitHub enabled; `/v1/auth/session` reports anonymous without a cookie. Live start endpoint returns 303 to GitHub with the configured callback, state, S256 PKCE and a Secure/HttpOnly/SameSite cookie.
 - Workspace tests: 66 passed; all-target Clippy with `-D warnings`, formatting and dependency audit passed (zero vulnerabilities/warnings).
 - Complete provider authorization/code exchange still requires an account owner's browser consent. Automated checks verify the local callback/session flow with an injected provider, not real user consent.
+
+## Website update — 2026-10-24
+
+- Separate `VNOX-Web` source commit `622f396364bb`; static release `622f396364bb-9b77c9dbd02c` served through `/opt/vnox-central/web/current`.
+- Static files use 0644 permissions, directories 0755. Both approved SVG/PNG marks remain available for transactional email.
+- `/` and `/account` serve the website. `/v1/`, `/health`, `/ready`, `/version` remain Hub proxy routes; authentication logging suppression is preserved.
+- Nginx configuration validated before reload. Website CSP allows only self-hosted scripts/styles, the GitHub avatar origin for images, and same-origin API connections.
+- Live Chromium checked desktop landing, anonymous account/GitHub link, mobile account overflow, stylesheet MIME, JavaScript console and API/logo responses. No browser errors were observed. No real user authorization was performed.
