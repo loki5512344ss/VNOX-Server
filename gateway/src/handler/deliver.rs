@@ -4,15 +4,13 @@ use tokio::io::{AsyncRead, AsyncWrite};
 use crate::{
     domain::session,
     net::{io, state::BroadcastMsg, state::State},
-    proto::SessionCrypto,
 };
 
-pub async fn deliver_encrypted(
+pub async fn deliver_frame(
     stream: &mut (impl AsyncRead + AsyncWrite + Unpin),
     seq: &mut u32,
     session_id: &str,
     msg: &BroadcastMsg,
-    crypto: &SessionCrypto,
     state: &State,
 ) -> Result<()> {
     if msg.exclude_session.as_deref() == Some(session_id)
@@ -69,5 +67,5 @@ pub async fn deliver_encrypted(
         }
         drop(access);
     }
-    io::deliver_encrypted(stream, crypto, seq, &msg.data).await
+    io::deliver_frame(stream, seq, &msg.data).await
 }

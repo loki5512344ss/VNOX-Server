@@ -4,16 +4,13 @@ use tokio::io::{AsyncRead, AsyncWrite};
 use crate::{
     domain::session,
     net::{io, state::State},
-    proto::{
-        GuildInfo, GuildListPayload, PacketId, SessionCrypto, UserRoleUpdatePayload, to_payload,
-    },
+    proto::{GuildInfo, GuildListPayload, PacketId, UserRoleUpdatePayload, to_payload},
 };
 
 pub async fn handle_guild_list(
     stream: &mut (impl AsyncRead + AsyncWrite + Unpin),
     seq: &mut u32,
     session_id: &str,
-    crypto: &SessionCrypto,
     state: &State,
 ) -> Result<()> {
     let sess = session::get(&state.sessions, session_id)
@@ -39,7 +36,7 @@ pub async fn handle_guild_list(
             .max_by_key(|r| r.position)
             .map(|r| r.color.clone())
             .unwrap_or_else(|| "#ffffff".into());
-        io::send_encrypted(
+        io::send_frame(
             stream,
             PacketId::UserRoleUpdate,
             seq,
@@ -48,17 +45,15 @@ pub async fn handle_guild_list(
                 guild_id: g.id.clone(),
                 color,
             }),
-            crypto,
         )
         .await?;
     }
 
-    io::send_encrypted(
+    io::send_frame(
         stream,
         PacketId::GuildList,
         seq,
         &to_payload(&GuildListPayload { guilds }),
-        crypto,
     )
     .await?;
     Ok(())

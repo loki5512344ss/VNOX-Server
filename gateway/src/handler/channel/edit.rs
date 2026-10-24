@@ -6,7 +6,7 @@ use tracing::info;
 use crate::{
     domain::{channels, session},
     net::{io, state::State},
-    proto::{ChannelEditPayload, PacketId, SessionCrypto, encode_packet, to_payload},
+    proto::{ChannelEditPayload, PacketId, encode_packet, to_payload},
 };
 
 pub async fn handle_channel_edit(
@@ -14,7 +14,6 @@ pub async fn handle_channel_edit(
     seq: &mut u32,
     session_id: &str,
     payload: &[u8],
-    crypto: &SessionCrypto,
     state: &State,
 ) -> Result<()> {
     let req = ChannelEditPayload::decode(payload)?;
@@ -32,7 +31,7 @@ pub async fn handle_channel_edit(
         || channel_name.chars().count() > 100
         || channel_name.chars().any(char::is_control)
     {
-        io::send_encrypted(
+        io::send_frame(
             stream,
             PacketId::Error,
             seq,
@@ -40,7 +39,6 @@ pub async fn handle_channel_edit(
                 code: crate::proto::ErrorCode::InvalidPacket as u32,
                 message: "channel_id and channel_name are required".into(),
             }),
-            crypto,
         )
         .await?;
         return Ok(());
@@ -56,7 +54,7 @@ pub async fn handle_channel_edit(
     .await?
     {
         drop(access);
-        super::denied(stream, seq, crypto).await?;
+        super::denied(stream, seq).await?;
         return Ok(());
     }
     state
@@ -67,7 +65,7 @@ pub async fn handle_channel_edit(
 
     drop(access);
     if !renamed {
-        io::send_encrypted(
+        io::send_frame(
             stream,
             PacketId::Error,
             seq,
@@ -75,7 +73,6 @@ pub async fn handle_channel_edit(
                 code: crate::proto::ErrorCode::ChannelNotFound as u32,
                 message: "channel not found".into(),
             }),
-            crypto,
         )
         .await?;
         return Ok(());

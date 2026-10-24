@@ -19,6 +19,11 @@ impl ServerIdentity {
         use ed25519_dalek::Signer;
         self.signing_key.sign(message).to_bytes().to_vec()
     }
+    /// Ed25519 seed. Only used to derive the TLS key of the auto generated certificate
+    /// (see `crate::tls`), so the certificate fingerprint is a function of the identity.
+    pub(crate) fn signing_seed(&self) -> [u8; 32] {
+        self.signing_key.to_bytes()
+    }
     pub fn pubkey_hex(&self) -> String {
         hex::encode(self.signing_key.verifying_key().to_bytes())
     }

@@ -12,6 +12,12 @@ admin_bind          = "127.0.0.1:7601"
 message_rate_per_sec = 5
 # Burst size for the token bucket.
 message_rate_burst   = 10
+# TLS 1.3 is always on (LNEx v3). With neither option below the gateway generates
+# a self-signed certificate in <data_dir>/tls/ (key = server identity) and prints its
+# SPKI SHA-256 fingerprint at startup. Clients pin it on first use.
+# For a public CA certificate (for example Let's Encrypt) set both paths and restart on renewal:
+# tls_cert_path = "/etc/letsencrypt/live/chat.example.org/fullchain.pem"
+# tls_key_path  = "/etc/letsencrypt/live/chat.example.org/privkey.pem"
 
 [voice]
 bind = "127.0.0.1:7700"

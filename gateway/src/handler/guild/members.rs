@@ -7,7 +7,7 @@ use crate::{
     net::{io, state::State},
     proto::{
         GuildMemberJoinPayload, GuildMemberKickPayload, GuildMemberLeavePayload, PacketId,
-        SessionCrypto, to_payload,
+        to_payload,
     },
 };
 
@@ -18,7 +18,6 @@ pub async fn handle_guild_member_join(
     seq: &mut u32,
     session_id: &str,
     payload: &[u8],
-    crypto: &SessionCrypto,
     state: &State,
 ) -> Result<()> {
     let guard = state.access.write().await;
@@ -40,7 +39,6 @@ pub async fn handle_guild_member_join(
             seq,
             crate::proto::ErrorCode::PermissionDenied,
             "a valid invitation is required",
-            crypto,
         )
         .await?;
         return Ok(());
@@ -61,18 +59,17 @@ pub async fn handle_guild_member_join(
         .unwrap_or_else(|| "#ffffff".into());
 
     drop(guard);
-    io::send_encrypted(
+    io::send_frame(
         stream,
         PacketId::GuildMemberJoin,
         seq,
         &to_payload(&crate::proto::GuildMemberJoinPayload {
             guild_id: req.guild_id.clone(),
         }),
-        crypto,
     )
     .await?;
 
-    io::send_encrypted(
+    io::send_frame(
         stream,
         PacketId::UserRoleUpdate,
         seq,
@@ -81,7 +78,6 @@ pub async fn handle_guild_member_join(
             guild_id: req.guild_id.clone(),
             color,
         }),
-        crypto,
     )
     .await?;
     Ok(())
@@ -92,7 +88,6 @@ pub async fn handle_guild_member_leave(
     seq: &mut u32,
     session_id: &str,
     payload: &[u8],
-    crypto: &SessionCrypto,
     state: &State,
 ) -> Result<()> {
     let guard = state.access.write().await;
@@ -118,7 +113,6 @@ pub async fn handle_guild_member_leave(
             seq,
             crate::proto::ErrorCode::PermissionDenied,
             "only a non-owner may leave their own membership",
-            crypto,
         )
         .await?;
         return Ok(());
@@ -129,7 +123,7 @@ pub async fn handle_guild_member_leave(
         .await?;
     crate::handler::channel::revoke_guild_access(state, &req.guild_id, Some(&target)).await;
     drop(guard);
-    io::send_encrypted(
+    io::send_frame(
         stream,
         PacketId::GuildMemberLeave,
         seq,
@@ -137,7 +131,6 @@ pub async fn handle_guild_member_leave(
             guild_id: req.guild_id.clone(),
             user_id: target,
         }),
-        crypto,
     )
     .await?;
     Ok(())
@@ -148,7 +141,6 @@ pub async fn handle_guild_member_kick(
     seq: &mut u32,
     session_id: &str,
     payload: &[u8],
-    crypto: &SessionCrypto,
     state: &State,
 ) -> Result<()> {
     let guard = state.access.write().await;
@@ -171,7 +163,6 @@ pub async fn handle_guild_member_kick(
             seq,
             crate::proto::ErrorCode::PermissionDenied,
             "missing KICK_MEMBERS permission",
-            crypto,
         )
         .await?;
         return Ok(());
@@ -189,7 +180,6 @@ pub async fn handle_guild_member_kick(
             seq,
             crate::proto::ErrorCode::PermissionDenied,
             "guild owner cannot be kicked",
-            crypto,
         )
         .await?;
         return Ok(());
@@ -211,7 +201,7 @@ pub async fn handle_guild_member_kick(
         )
         .await?;
     drop(guard);
-    io::send_encrypted(
+    io::send_frame(
         stream,
         PacketId::GuildMemberKick,
         seq,
@@ -219,7 +209,6 @@ pub async fn handle_guild_member_kick(
             guild_id: req.guild_id.clone(),
             user_id: req.user_id.clone(),
         }),
-        crypto,
     )
     .await?;
     Ok(())

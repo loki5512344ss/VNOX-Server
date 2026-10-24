@@ -4,14 +4,13 @@ use tokio::io::{AsyncRead, AsyncWrite};
 use crate::{
     domain::session,
     net::{io, state::State},
-    proto::{FriendInfo, FriendListPayload, PacketId, SessionCrypto, to_payload},
+    proto::{FriendInfo, FriendListPayload, PacketId, to_payload},
 };
 
 pub async fn handle_friend_list(
     stream: &mut (impl AsyncRead + AsyncWrite + Unpin),
     seq: &mut u32,
     session_id: &str,
-    crypto: &SessionCrypto,
     state: &State,
 ) -> Result<()> {
     let sess = session::get(&state.sessions, session_id)
@@ -35,12 +34,11 @@ pub async fn handle_friend_list(
         });
     }
 
-    io::send_encrypted(
+    io::send_frame(
         stream,
         PacketId::FriendList,
         seq,
         &to_payload(&FriendListPayload { friends }),
-        crypto,
     )
     .await?;
     Ok(())

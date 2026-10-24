@@ -5,7 +5,6 @@ use tracing::info;
 use crate::{
     domain::{channels, session},
     net::state::State,
-    proto::SessionCrypto,
 };
 
 use super::{broadcast_leave, set_channel, set_voice_channel};
@@ -15,7 +14,6 @@ pub async fn leave(
     _seq: &mut u32,
     session_id: &str,
     channel_id: &str,
-    _crypto: &SessionCrypto,
     state: &State,
 ) -> Result<()> {
     let Some(sess) = session::get(&state.sessions, session_id).await else {

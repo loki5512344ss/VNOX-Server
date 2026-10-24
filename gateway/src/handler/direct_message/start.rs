@@ -5,7 +5,7 @@ use tokio::io::{AsyncRead, AsyncWrite};
 use crate::{
     domain::session,
     net::{io, state::State},
-    proto::{self, DmStartPayload, DmStartResponsePayload, PacketId, SessionCrypto, to_payload},
+    proto::{self, DmStartPayload, DmStartResponsePayload, PacketId, to_payload},
 };
 
 pub async fn handle_dm_start(
@@ -13,7 +13,6 @@ pub async fn handle_dm_start(
     seq: &mut u32,
     session_id: &str,
     payload: &[u8],
-    crypto: &SessionCrypto,
     state: &State,
 ) -> Result<()> {
     let req = DmStartPayload::decode(payload)?;
@@ -29,7 +28,7 @@ pub async fn handle_dm_start(
         .is_blocked(&req.target_user_id, &my_id)
         .await?
     {
-        io::send_encrypted(
+        io::send_frame(
             stream,
             PacketId::Error,
             seq,
@@ -37,14 +36,13 @@ pub async fn handle_dm_start(
                 code: proto::ErrorCode::Blocked as u32,
                 message: "blocked".into(),
             }),
-            crypto,
         )
         .await?;
         return Ok(());
     }
 
     if req.target_user_id == my_id {
-        io::send_encrypted(
+        io::send_frame(
             stream,
             PacketId::Error,
             seq,
@@ -52,7 +50,6 @@ pub async fn handle_dm_start(
                 code: proto::ErrorCode::InvalidPacket as u32,
                 message: "cannot DM yourself".into(),
             }),
-            crypto,
         )
         .await?;
         return Ok(());
@@ -84,7 +81,7 @@ pub async fn handle_dm_start(
         messages,
         unread_count: unread_count as u32,
     };
-    io::send_encrypted(stream, PacketId::DmStart, seq, &to_payload(&resp), crypto).await?;
+    io::send_frame(stream, PacketId::DmStart, seq, &to_payload(&resp)).await?;
     Ok(())
 }
 
@@ -93,7 +90,6 @@ pub async fn handle_dm_read_ack(
     seq: &mut u32,
     session_id: &str,
     payload: &[u8],
-    crypto: &SessionCrypto,
     state: &State,
 ) -> Result<()> {
     let req = crate::proto::DmReadAckPayload::decode(payload)?;
@@ -106,6 +102,6 @@ pub async fn handle_dm_read_ack(
 
     state.storage.reset_dm_unread(&req.dm_id, &my_id).await?;
 
-    io::send_encrypted(stream, PacketId::DmReadAck, seq, b"{}", crypto).await?;
+    io::send_frame(stream, PacketId::DmReadAck, seq, b"{}").await?;
     Ok(())
 }

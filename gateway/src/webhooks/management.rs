@@ -102,12 +102,11 @@ pub async fn handle<S: AsyncRead + AsyncWrite + Unpin>(
             .iter()
             .map(info)
             .collect();
-        return io::send_encrypted(
+        return io::send_frame(
             ctx.stream,
             PacketId::WebhookListResult,
             ctx.seq,
             &to_payload(&WebhookListResult { hooks, request_id }),
-            ctx.crypto,
         )
         .await;
     }
@@ -221,7 +220,7 @@ pub async fn handle<S: AsyncRead + AsyncWrite + Unpin>(
         }
         h
     };
-    io::send_encrypted(
+    io::send_frame(
         ctx.stream,
         PacketId::WebhookResult,
         ctx.seq,
@@ -230,7 +229,6 @@ pub async fn handle<S: AsyncRead + AsyncWrite + Unpin>(
             secret,
             request_id,
         }),
-        ctx.crypto,
     )
     .await
 }
@@ -240,7 +238,7 @@ async fn error<S: AsyncRead + AsyncWrite + Unpin>(
     code: ErrorCode,
     msg: &str,
 ) -> Result<()> {
-    io::send_encrypted(
+    io::send_frame(
         ctx.stream,
         PacketId::WebhookErrorResult,
         ctx.seq,
@@ -249,7 +247,6 @@ async fn error<S: AsyncRead + AsyncWrite + Unpin>(
             code: code as u32,
             message: msg.into(),
         }),
-        ctx.crypto,
     )
     .await
 }

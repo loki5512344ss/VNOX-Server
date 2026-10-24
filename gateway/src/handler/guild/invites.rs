@@ -7,7 +7,7 @@ use crate::{
     net::{io, state::State},
     proto::{
         InviteAcceptPayload, InviteCreatePayload, InviteDeletePayload, InviteInfo, PacketId,
-        SessionCrypto, to_payload,
+        to_payload,
     },
 };
 
@@ -18,7 +18,6 @@ pub async fn handle_invite_create(
     seq: &mut u32,
     session_id: &str,
     payload: &[u8],
-    crypto: &SessionCrypto,
     state: &State,
 ) -> Result<()> {
     let req = InviteCreatePayload::decode(payload)?;
@@ -39,7 +38,6 @@ pub async fn handle_invite_create(
             seq,
             crate::proto::ErrorCode::PermissionDenied,
             "missing CREATE_INVITE permission",
-            crypto,
         )
         .await?;
         return Ok(());
@@ -78,14 +76,7 @@ pub async fn handle_invite_create(
         expires_at: inv.expires_at,
         created_at: inv.created_at,
     };
-    io::send_encrypted(
-        stream,
-        PacketId::InviteCreate,
-        seq,
-        &to_payload(&info),
-        crypto,
-    )
-    .await?;
+    io::send_frame(stream, PacketId::InviteCreate, seq, &to_payload(&info)).await?;
     Ok(())
 }
 
@@ -94,7 +85,6 @@ pub async fn handle_invite_accept(
     seq: &mut u32,
     session_id: &str,
     payload: &[u8],
-    crypto: &SessionCrypto,
     state: &State,
 ) -> Result<()> {
     let req = InviteAcceptPayload::decode(payload)?;
@@ -116,7 +106,6 @@ pub async fn handle_invite_accept(
                 seq,
                 crate::proto::ErrorCode::InvalidPacket,
                 "invite expired",
-                crypto,
             )
             .await?;
             return Ok(());
@@ -130,7 +119,6 @@ pub async fn handle_invite_accept(
             seq,
             crate::proto::ErrorCode::InvalidPacket,
             "invite max uses reached",
-            crypto,
         )
         .await?;
         return Ok(());
@@ -153,7 +141,7 @@ pub async fn handle_invite_accept(
         )
         .await?;
 
-    io::send_encrypted(
+    io::send_frame(
         stream,
         PacketId::InviteAccept,
         seq,
@@ -162,7 +150,6 @@ pub async fn handle_invite_accept(
             guild_id: inv.guild_id.clone(),
             guild_name: inv.guild_name.clone(),
         }),
-        crypto,
     )
     .await?;
     Ok(())
@@ -173,7 +160,6 @@ pub async fn handle_invite_delete(
     seq: &mut u32,
     session_id: &str,
     payload: &[u8],
-    crypto: &SessionCrypto,
     state: &State,
 ) -> Result<()> {
     let req = InviteDeletePayload::decode(payload)?;
@@ -194,7 +180,6 @@ pub async fn handle_invite_delete(
             seq,
             crate::proto::ErrorCode::PermissionDenied,
             "missing MANAGE_GUILD permission",
-            crypto,
         )
         .await?;
         return Ok(());
@@ -212,7 +197,7 @@ pub async fn handle_invite_delete(
             None,
         )
         .await?;
-    io::send_encrypted(
+    io::send_frame(
         stream,
         PacketId::InviteDelete,
         seq,
@@ -220,7 +205,6 @@ pub async fn handle_invite_delete(
             guild_id: req.guild_id.clone(),
             invite_id: req.invite_id.clone(),
         }),
-        crypto,
     )
     .await?;
     Ok(())

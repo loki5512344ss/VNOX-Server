@@ -5,7 +5,7 @@ use tokio::io::{AsyncRead, AsyncWrite};
 use crate::{
     domain::session,
     net::{io, state::State},
-    proto::{DmHistoryPayload, PacketId, SessionCrypto, to_payload},
+    proto::{DmHistoryPayload, PacketId, to_payload},
 };
 
 pub async fn handle_dm_history(
@@ -13,7 +13,6 @@ pub async fn handle_dm_history(
     seq: &mut u32,
     session_id: &str,
     payload: &[u8],
-    crypto: &SessionCrypto,
     state: &State,
 ) -> Result<()> {
     let req = DmHistoryPayload::decode(payload)?;
@@ -42,6 +41,6 @@ pub async fn handle_dm_history(
         search_query: None,
         limit: None,
     };
-    io::send_encrypted(stream, PacketId::DmHistory, seq, &to_payload(&resp), crypto).await?;
+    io::send_frame(stream, PacketId::DmHistory, seq, &to_payload(&resp)).await?;
     Ok(())
 }

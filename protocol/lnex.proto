@@ -8,8 +8,11 @@ message Hello {
   bytes  server_pubkey    = 2;
   bytes  challenge_nonce  = 3;
   string node_name        = 4;
-  bytes  server_eph_pubkey = 5;
+  // LNEx v3: the ephemeral X25519 exchange was replaced by TLS 1.3.
+  reserved 5;
+  reserved "server_eph_pubkey";
   bool   private_mode     = 6;
+  // Ed25519 over "VNOX-LNEx-v3-server-hello\0" || tls_exporter || Hello(signature empty).
   bytes server_signature = 7;
 }
 
@@ -17,8 +20,10 @@ message Auth {
   bytes  client_pubkey    = 1;
   string nickname         = 2;
   string lnex_version     = 3;
+  // Ed25519 over the client-auth transcript bound to the TLS exporter (see docs/02-protocol/tls.md).
   bytes  signature        = 4;
-  bytes  client_eph_pubkey = 5;
+  reserved 5;
+  reserved "client_eph_pubkey";
 }
 
 message Session {

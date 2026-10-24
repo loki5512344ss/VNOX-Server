@@ -8,7 +8,7 @@ use tokio::io::{AsyncRead, AsyncWrite};
 
 use crate::{
     net::io,
-    proto::{ErrorPayload, PacketId, SessionCrypto, to_payload},
+    proto::{ErrorPayload, PacketId, to_payload},
 };
 
 async fn send_err(
@@ -16,9 +16,8 @@ async fn send_err(
     seq: &mut u32,
     code: crate::proto::ErrorCode,
     msg: &str,
-    crypto: &SessionCrypto,
 ) -> Result<()> {
-    io::send_encrypted(
+    io::send_frame(
         stream,
         PacketId::Error,
         seq,
@@ -26,7 +25,6 @@ async fn send_err(
             code: code as u32,
             message: msg.into(),
         }),
-        crypto,
     )
     .await
 }

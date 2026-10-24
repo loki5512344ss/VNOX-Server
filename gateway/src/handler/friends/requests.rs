@@ -5,10 +5,7 @@ use tokio::io::{AsyncRead, AsyncWrite};
 use crate::{
     domain::session,
     net::{io, state::State},
-    proto::{
-        FriendAcceptPayload, FriendEventPayload, FriendRequestPayload, PacketId, SessionCrypto,
-        to_payload,
-    },
+    proto::{FriendAcceptPayload, FriendEventPayload, FriendRequestPayload, PacketId, to_payload},
 };
 
 use super::send_err;
@@ -18,7 +15,6 @@ pub async fn handle_friend_request(
     seq: &mut u32,
     session_id: &str,
     payload: &[u8],
-    crypto: &SessionCrypto,
     state: &State,
 ) -> Result<()> {
     let req = FriendRequestPayload::decode(payload)?;
@@ -36,7 +32,6 @@ pub async fn handle_friend_request(
             seq,
             crate::proto::ErrorCode::Blocked,
             "you are blocked by this user",
-            crypto,
         )
         .await?;
         return Ok(());
@@ -52,7 +47,6 @@ pub async fn handle_friend_request(
             seq,
             crate::proto::ErrorCode::InvalidPacket,
             "already friends",
-            crypto,
         )
         .await?;
         return Ok(());
@@ -68,7 +62,6 @@ pub async fn handle_friend_request(
             seq,
             crate::proto::ErrorCode::InvalidPacket,
             "already friends or request pending",
-            crypto,
         )
         .await?;
         return Ok(());
@@ -81,14 +74,13 @@ pub async fn handle_friend_request(
     };
     super::notify_user(state, &req.to_user_id, &ev).await;
 
-    io::send_encrypted(
+    io::send_frame(
         stream,
         PacketId::FriendRequest,
         seq,
         &to_payload(&FriendRequestPayload {
             to_user_id: req.to_user_id.clone(),
         }),
-        crypto,
     )
     .await?;
     Ok(())
@@ -99,7 +91,6 @@ pub async fn handle_friend_accept(
     seq: &mut u32,
     session_id: &str,
     payload: &[u8],
-    crypto: &SessionCrypto,
     state: &State,
 ) -> Result<()> {
     let req = FriendAcceptPayload::decode(payload)?;
@@ -117,7 +108,6 @@ pub async fn handle_friend_accept(
             seq,
             crate::proto::ErrorCode::InvalidPacket,
             "no pending request",
-            crypto,
         )
         .await?;
         return Ok(());
@@ -130,14 +120,13 @@ pub async fn handle_friend_accept(
     };
     super::notify_user(state, &req.from_user_id, &ev).await;
 
-    io::send_encrypted(
+    io::send_frame(
         stream,
         PacketId::FriendAccept,
         seq,
         &to_payload(&FriendAcceptPayload {
             from_user_id: req.from_user_id.clone(),
         }),
-        crypto,
     )
     .await?;
     Ok(())

@@ -1,10 +1,10 @@
+//! LNEx v3 TCP framing. Frames are written directly into the TLS 1.3 stream, so there is
+//! no per frame encryption: the 12 byte header is followed by the protobuf payload and
+//! `flags` must be zero on the control plane.
 use anyhow::Result;
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 
-use crate::proto::{
-    ErrorCode, ErrorPayload, PacketHeader, PacketId, SessionCrypto, encode_packet, flags,
-    to_payload,
-};
+use crate::proto::{ErrorCode, ErrorPayload, PacketHeader, PacketId, encode_packet, to_payload};
 
 const MAX_PAYLOAD: u32 = 4 * 1024 * 1024;
 
@@ -14,6 +14,11 @@ pub async fn send_packet(
     seq: &mut u32,
     payload: &[u8],
 ) -> Result<()> {
+    anyhow::ensure!(
+        payload.len() <= MAX_PAYLOAD as usize,
+        "payload too large: {}",
+        payload.len()
+    );
     let data = encode_packet(id, *seq, payload);
     *seq = seq.wrapping_add(1);
     stream.write_all(&data).await?;
@@ -34,15 +39,18 @@ pub async fn send_error(
     send_packet(stream, PacketId::Error, seq, &to_payload(&p)).await
 }
 
+/// Read one frame during the handshake (strictly `flags == 0`).
 pub async fn read_packet(
     stream: &mut (impl AsyncRead + AsyncWrite + Unpin),
 ) -> Result<(PacketHeader, Vec<u8>)> {
     let mut buf = [0u8; PacketHeader::SIZE];
     stream.read_exact(&mut buf).await?;
     let hdr = PacketHeader::from_bytes(&buf);
-    if hdr.flags & !flags::KNOWN_MASK != 0 {
-        return Err(anyhow::anyhow!("unknown packet flags: 0x{:04X}", hdr.flags));
-    }
+    anyhow::ensure!(
+        hdr.flags == 0,
+        "unsupported packet flags: 0x{:04X}",
+        hdr.flags
+    );
     if hdr.payload_length > MAX_PAYLOAD {
         return Err(anyhow::anyhow!("payload too large: {}", hdr.payload_length));
     }
@@ -53,114 +61,68 @@ pub async fn read_packet(
     Ok((hdr, payload))
 }
 
-pub async fn send_encrypted(
+/// Send one session frame. The sequence number never wraps inside a connection.
+pub async fn send_frame(
     stream: &mut (impl AsyncRead + AsyncWrite + Unpin),
     id: PacketId,
     seq: &mut u32,
     payload: &[u8],
-    crypto: &SessionCrypto,
 ) -> Result<()> {
     anyhow::ensure!(*seq < u32::MAX, "session sequence exhausted");
-    anyhow::ensure!(
-        payload.len() <= MAX_PAYLOAD as usize - 16,
-        "payload too large"
-    );
-    let flags_val = flags::ENCRYPTED;
-    let mut hdr_buf = [0u8; PacketHeader::SIZE];
-    hdr_buf[0..2].copy_from_slice(&(id as u16).to_be_bytes());
-    hdr_buf[2..4].copy_from_slice(&flags_val.to_be_bytes());
-    hdr_buf[4..8].copy_from_slice(&seq.to_be_bytes());
-    hdr_buf[8..12].copy_from_slice(&((payload.len() + 16) as u32).to_be_bytes());
-    let encrypted = crypto.encrypt_s2c_frame(*seq as u64, payload, &hdr_buf);
-    *seq += 1;
-
-    let mut out = Vec::with_capacity(PacketHeader::SIZE + encrypted.len());
-    out.extend_from_slice(&hdr_buf);
-    out.extend_from_slice(&encrypted);
-    stream.write_all(&out).await?;
-    Ok(())
+    send_packet(stream, id, seq, payload).await
 }
 
-pub async fn read_encrypted(
+/// Forward a pre-encoded broadcast packet (`header || payload`) re-sequenced for this session.
+pub async fn deliver_frame(
     stream: &mut (impl AsyncRead + AsyncWrite + Unpin),
-    crypto: &SessionCrypto,
-) -> Result<(PacketHeader, Vec<u8>)> {
-    let mut buf = [0u8; PacketHeader::SIZE];
-    stream.read_exact(&mut buf).await?;
-    let hdr = PacketHeader::from_bytes(&buf);
-    if hdr.flags & !flags::KNOWN_MASK != 0 {
-        return Err(anyhow::anyhow!("unknown packet flags: 0x{:04X}", hdr.flags));
-    }
-    if hdr.flags & flags::ENCRYPTED == 0 {
-        return Err(anyhow::anyhow!("packet not encrypted"));
-    }
-    if hdr.payload_length > MAX_PAYLOAD {
-        return Err(anyhow::anyhow!("payload too large: {}", hdr.payload_length));
-    }
-    let mut encrypted = vec![0u8; hdr.payload_length as usize];
-    if !encrypted.is_empty() {
-        stream.read_exact(&mut encrypted).await?;
-    }
-    let payload = crypto.decrypt_c2s_frame(hdr.sequence as u64, &encrypted, &buf)?;
-    Ok((hdr, payload))
-}
-
-pub async fn deliver_encrypted(
-    stream: &mut (impl AsyncRead + AsyncWrite + Unpin),
-    crypto: &SessionCrypto,
     seq: &mut u32,
     raw_data: &[u8],
 ) -> Result<()> {
     if raw_data.len() < PacketHeader::SIZE {
         return Err(anyhow::anyhow!("deliver: packet too short"));
     }
-    let raw_hdr = PacketHeader::from_bytes(raw_data[..PacketHeader::SIZE].try_into().unwrap());
-    let pid = match PacketId::from_u16(raw_hdr.packet_id) {
-        Some(p) => p,
-        None => {
-            return Err(anyhow::anyhow!(
-                "deliver: unknown packet id 0x{:04X}",
-                raw_hdr.packet_id
-            ));
-        }
-    };
-    let payload = &raw_data[PacketHeader::SIZE..];
-    send_encrypted(stream, pid, seq, payload, crypto).await
+    let raw_hdr = PacketHeader::from_bytes(
+        raw_data[..PacketHeader::SIZE]
+            .try_into()
+            .map_err(|_| anyhow::anyhow!("deliver: bad header"))?,
+    );
+    let pid = PacketId::from_u16(raw_hdr.packet_id)
+        .ok_or_else(|| anyhow::anyhow!("deliver: unknown packet id 0x{:04X}", raw_hdr.packet_id))?;
+    send_frame(stream, pid, seq, &raw_data[PacketHeader::SIZE..]).await
 }
 
 /// Incremental framing state survives cancellation by broadcast delivery.
-pub struct EncryptedReader {
+pub struct FrameReader {
     bytes: Vec<u8>,
     expected_sequence: u32,
 }
-impl Default for EncryptedReader {
+impl Default for FrameReader {
     fn default() -> Self {
         Self {
             bytes: Vec::new(),
+            // The client AUTH used sequence 0, the first session frame is 1.
             expected_sequence: 1,
         }
     }
 }
-impl EncryptedReader {
+impl FrameReader {
     pub async fn read(
         &mut self,
         stream: &mut (impl AsyncRead + Unpin),
-        crypto: &SessionCrypto,
     ) -> Result<(PacketHeader, Vec<u8>)> {
         loop {
             let needed = if self.bytes.len() < PacketHeader::SIZE {
                 PacketHeader::SIZE
             } else {
-                let header: &[u8; PacketHeader::SIZE] =
-                    self.bytes[..PacketHeader::SIZE].try_into().unwrap();
-                let hdr = PacketHeader::from_bytes(header);
+                let header: [u8; PacketHeader::SIZE] = self.bytes[..PacketHeader::SIZE]
+                    .try_into()
+                    .map_err(|_| anyhow::anyhow!("short header"))?;
+                let hdr = PacketHeader::from_bytes(&header);
+                anyhow::ensure!(hdr.flags == 0, "unsupported frame flags");
                 anyhow::ensure!(
-                    hdr.flags == flags::ENCRYPTED,
-                    "unsupported encrypted frame flags"
-                );
-                anyhow::ensure!(
-                    hdr.payload_length >= 16 && hdr.payload_length <= MAX_PAYLOAD,
-                    "invalid encrypted payload size"
+                    hdr.payload_length <= MAX_PAYLOAD,
+                    "payload too large: {}",
+                    hdr.payload_length
                 );
                 anyhow::ensure!(
                     hdr.sequence == self.expected_sequence && hdr.sequence < u32::MAX,
@@ -168,15 +130,12 @@ impl EncryptedReader {
                 );
                 PacketHeader::SIZE + hdr.payload_length as usize
             };
-            if self.bytes.len() == needed && needed > PacketHeader::SIZE {
-                let header: &[u8; PacketHeader::SIZE] =
-                    self.bytes[..PacketHeader::SIZE].try_into().unwrap();
-                let hdr = PacketHeader::from_bytes(header);
-                let payload = crypto.decrypt_c2s_frame(
-                    hdr.sequence as u64,
-                    &self.bytes[PacketHeader::SIZE..],
-                    header,
-                )?;
+            if self.bytes.len() == needed && self.bytes.len() >= PacketHeader::SIZE {
+                let header: [u8; PacketHeader::SIZE] = self.bytes[..PacketHeader::SIZE]
+                    .try_into()
+                    .map_err(|_| anyhow::anyhow!("short header"))?;
+                let hdr = PacketHeader::from_bytes(&header);
+                let payload = self.bytes[PacketHeader::SIZE..].to_vec();
                 self.bytes.clear();
                 self.expected_sequence += 1;
                 return Ok((hdr, payload));
@@ -193,49 +152,52 @@ impl EncryptedReader {
 #[cfg(test)]
 mod reader_tests {
     use super::*;
-    fn frame(crypto: &SessionCrypto, seq: u32) -> Vec<u8> {
-        let mut header = [0u8; 12];
-        header[..2].copy_from_slice(&(PacketId::Ping as u16).to_be_bytes());
-        header[2..4].copy_from_slice(&flags::ENCRYPTED.to_be_bytes());
-        header[4..8].copy_from_slice(&seq.to_be_bytes());
-        header[8..].copy_from_slice(&20u32.to_be_bytes());
-        let mut bytes = header.to_vec();
-        bytes.extend_from_slice(&crypto.encrypt_c2s_frame(seq as u64, b"ping", &header));
+
+    fn frame(seq: u32, flags: u16, body: &[u8]) -> Vec<u8> {
+        let mut bytes = Vec::new();
+        bytes.extend_from_slice(&(PacketId::Ping as u16).to_be_bytes());
+        bytes.extend_from_slice(&flags.to_be_bytes());
+        bytes.extend_from_slice(&seq.to_be_bytes());
+        bytes.extend_from_slice(&(body.len() as u32).to_be_bytes());
+        bytes.extend_from_slice(body);
         bytes
     }
+
     #[tokio::test]
     async fn cancelled_partial_read_preserves_framing_and_rejects_replay() {
-        let crypto = SessionCrypto::derive(&[7; 32], "fixture");
-        let bytes = frame(&crypto, 1);
+        let bytes = frame(1, 0, b"ping");
         let (mut server, mut peer) = tokio::io::duplex(128);
-        let mut reader = EncryptedReader::default();
+        let mut reader = FrameReader::default();
         peer.write_all(&bytes[..5]).await.unwrap();
         assert!(
             tokio::time::timeout(
                 std::time::Duration::from_millis(2),
-                reader.read(&mut server, &crypto)
+                reader.read(&mut server)
             )
             .await
             .is_err()
         );
         peer.write_all(&bytes[5..]).await.unwrap();
-        let (_, body) = reader.read(&mut server, &crypto).await.unwrap();
+        let (_, body) = reader.read(&mut server).await.unwrap();
         assert_eq!(body, b"ping");
         peer.write_all(&bytes).await.unwrap();
-        assert!(reader.read(&mut server, &crypto).await.is_err());
+        assert!(reader.read(&mut server).await.is_err());
     }
+
     #[tokio::test]
-    async fn modifying_authenticated_packet_type_is_rejected() {
-        let crypto = SessionCrypto::derive(&[7; 32], "fixture");
-        let mut bytes = frame(&crypto, 1);
-        bytes[1] ^= 1;
+    async fn legacy_encrypted_flag_is_rejected() {
+        let bytes = frame(1, crate::proto::flags::ENCRYPTED, b"0123456789abcdef");
         let (mut server, mut peer) = tokio::io::duplex(128);
         peer.write_all(&bytes).await.unwrap();
-        assert!(
-            EncryptedReader::default()
-                .read(&mut server, &crypto)
-                .await
-                .is_err()
-        );
+        let error = FrameReader::default().read(&mut server).await.unwrap_err();
+        assert!(error.to_string().contains("flags"));
+    }
+
+    #[tokio::test]
+    async fn out_of_order_sequence_is_rejected() {
+        let bytes = frame(2, 0, b"");
+        let (mut server, mut peer) = tokio::io::duplex(128);
+        peer.write_all(&bytes).await.unwrap();
+        assert!(FrameReader::default().read(&mut server).await.is_err());
     }
 }

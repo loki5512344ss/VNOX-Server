@@ -9,9 +9,7 @@ use crate::{
         io,
         state::{BroadcastMsg, State},
     },
-    proto::{
-        self, DmMessagePayload, ErrorCode, PacketId, SessionCrypto, encode_packet, to_payload,
-    },
+    proto::{self, DmMessagePayload, ErrorCode, PacketId, encode_packet, to_payload},
 };
 
 pub async fn handle_dm_message(
@@ -19,7 +17,6 @@ pub async fn handle_dm_message(
     seq: &mut u32,
     session_id: &str,
     payload: &[u8],
-    crypto: &SessionCrypto,
     state: &State,
 ) -> Result<()> {
     let msg = DmMessagePayload::decode(payload)?;
@@ -34,7 +31,7 @@ pub async fn handle_dm_message(
     if !state.rate_limiter.try_consume(session_id) {
         state.metrics.inc(&state.metrics.rate_limited_events);
         warn!("rate-limited DM session {session_id}");
-        io::send_encrypted(
+        io::send_frame(
             stream,
             PacketId::Error,
             seq,
@@ -42,7 +39,6 @@ pub async fn handle_dm_message(
                 code: ErrorCode::RateLimited as u32,
                 message: "you are sending messages too quickly".into(),
             }),
-            crypto,
         )
         .await?;
         return Ok(());
@@ -54,7 +50,7 @@ pub async fn handle_dm_message(
         .await?
         .ok_or_else(|| anyhow::anyhow!("user not in DM"))?;
     if state.storage.is_blocked(&other_id, &my_id).await? {
-        io::send_encrypted(
+        io::send_frame(
             stream,
             PacketId::Error,
             seq,
@@ -62,7 +58,6 @@ pub async fn handle_dm_message(
                 code: proto::ErrorCode::Blocked as u32,
                 message: "blocked".into(),
             }),
-            crypto,
         )
         .await?;
         return Ok(());
@@ -102,13 +97,6 @@ pub async fn handle_dm_message(
         warn!("dm recipient offline: {}", &other_id[..8]);
     }
 
-    io::send_encrypted(
-        stream,
-        PacketId::DmMessage,
-        seq,
-        &to_payload(&saved),
-        crypto,
-    )
-    .await?;
+    io::send_frame(stream, PacketId::DmMessage, seq, &to_payload(&saved)).await?;
     Ok(())
 }

@@ -294,7 +294,7 @@ pub async fn handle<S: AsyncRead + AsyncWrite + Unpin>(
             Ok(())
         }
         Err(error) => {
-            io::send_encrypted(
+            io::send_frame(
                 ctx.stream,
                 PacketId::Error,
                 ctx.seq,
@@ -302,7 +302,6 @@ pub async fn handle<S: AsyncRead + AsyncWrite + Unpin>(
                     code: proto::ErrorCode::PermissionDenied as u32,
                     message: format!("media: {error}"),
                 }),
-                ctx.crypto,
             )
             .await
         }

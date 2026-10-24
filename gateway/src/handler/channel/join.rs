@@ -6,8 +6,8 @@ use crate::{
         state::{BroadcastMsg, State},
     },
     proto::{
-        self, ChannelStatePayload, ChatHistoryPayload, MemberInfo, PacketId, SessionCrypto,
-        UserJoinPayload, encode_packet, to_payload,
+        self, ChannelStatePayload, ChatHistoryPayload, MemberInfo, PacketId, UserJoinPayload,
+        encode_packet, to_payload,
     },
 };
 use anyhow::Result;
@@ -20,7 +20,6 @@ pub async fn join(
     seq: &mut u32,
     session_id: &str,
     channel_id: &str,
-    crypto: &SessionCrypto,
     state: &State,
     _addr: SocketAddr,
 ) -> Result<()> {
@@ -30,7 +29,7 @@ pub async fn join(
     };
     let Some(ch) = channels::get_channel(&state.channels, channel_id).await else {
         drop(guard);
-        return io::send_encrypted(
+        return io::send_frame(
             stream,
             PacketId::Error,
             seq,
@@ -38,7 +37,6 @@ pub async fn join(
                 code: proto::ErrorCode::ChannelNotFound as u32,
                 message: "not found".into(),
             }),
-            crypto,
         )
         .await;
     };
@@ -51,7 +49,7 @@ pub async fn join(
             .any(|g| g.id == *guild)
     {
         drop(guard);
-        return io::send_encrypted(
+        return io::send_frame(
             stream,
             PacketId::Error,
             seq,
@@ -59,14 +57,13 @@ pub async fn join(
                 code: proto::ErrorCode::PermissionDenied as u32,
                 message: "guild membership required".into(),
             }),
-            crypto,
         )
         .await;
     }
     let is_voice = ch.kind == channels::ChannelKind::Voice;
     if is_voice && state.voice_member_tx.is_none() {
         drop(guard);
-        return io::send_encrypted(
+        return io::send_frame(
             stream,
             PacketId::Error,
             seq,
@@ -74,7 +71,6 @@ pub async fn join(
                 code: proto::ErrorCode::NodeUnavailable as u32,
                 message: "voice requires the combined server process".into(),
             }),
-            crypto,
         )
         .await;
     }
@@ -93,7 +89,7 @@ pub async fn join(
                 .has(crate::domain::permissions::Permissions::VOICE_SPEAK)
         {
             drop(guard);
-            return io::send_encrypted(
+            return io::send_frame(
                 stream,
                 PacketId::Error,
                 seq,
@@ -101,7 +97,6 @@ pub async fn join(
                     code: proto::ErrorCode::PermissionDenied as u32,
                     message: "VOICE_SPEAK permission required".into(),
                 }),
-                crypto,
             )
             .await;
         }
@@ -149,7 +144,7 @@ pub async fn join(
                 channels::leave(&state.channels, channel_id, session_id).await;
                 set_voice_channel(state, session_id, None).await;
                 drop(guard);
-                return io::send_encrypted(
+                return io::send_frame(
                     stream,
                     PacketId::Error,
                     seq,
@@ -157,7 +152,6 @@ pub async fn join(
                         code: proto::ErrorCode::NodeUnavailable as u32,
                         message: "voice service unavailable".into(),
                     }),
-                    crypto,
                 )
                 .await;
             }
@@ -203,21 +197,13 @@ pub async fn join(
         voice_endpoint: state.config.voice.bind.clone(),
         guild_id: ch.guild_id,
     };
-    io::send_encrypted(
-        stream,
-        PacketId::ChannelState,
-        seq,
-        &to_payload(&payload),
-        crypto,
-    )
-    .await?;
+    io::send_frame(stream, PacketId::ChannelState, seq, &to_payload(&payload)).await?;
     if let Some(credentials) = credentials {
-        io::send_encrypted(
+        io::send_frame(
             stream,
             PacketId::VoiceSession,
             seq,
             &to_payload(&credentials),
-            crypto,
         )
         .await?;
     }

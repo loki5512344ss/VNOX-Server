@@ -13,11 +13,10 @@ pub use run::run_session;
 
 use tokio::io::{AsyncRead, AsyncWrite};
 
-use crate::{net::state::State, proto::SessionCrypto};
+use crate::net::state::State;
 
 pub struct Ctx<'a, S: AsyncRead + AsyncWrite + Unpin> {
     pub stream: &'a mut S,
     pub seq: &'a mut u32,
-    pub crypto: &'a SessionCrypto,
     pub state: &'a State,
 }

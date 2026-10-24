@@ -1,4 +1,3 @@
-mod crypto;
 mod framing;
 mod packet;
 
@@ -7,8 +6,6 @@ pub mod lnex {
 }
 
 pub use lnex::*;
-
-pub use crypto::SessionCrypto;
 
 // Re-export everything so `crate::proto::X` works as before
 pub use framing::{encode_packet, to_payload};

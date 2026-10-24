@@ -6,7 +6,7 @@ use tracing::debug;
 use crate::{
     domain::session,
     net::{io, state::State},
-    proto::{GuildCreatePayload, GuildInfo, PacketId, SessionCrypto, to_payload},
+    proto::{GuildCreatePayload, GuildInfo, PacketId, to_payload},
 };
 
 use super::send_err;
@@ -16,7 +16,6 @@ pub async fn handle_guild_create(
     seq: &mut u32,
     session_id: &str,
     payload: &[u8],
-    crypto: &SessionCrypto,
     state: &State,
 ) -> Result<()> {
     let req = GuildCreatePayload::decode(payload)?;
@@ -30,7 +29,6 @@ pub async fn handle_guild_create(
             seq,
             crate::proto::ErrorCode::InvalidPacket,
             "guild name must be 2-100 chars",
-            crypto,
         )
         .await?;
         return Ok(());
@@ -51,14 +49,7 @@ pub async fn handle_guild_create(
         created_at: guild.created_at,
     };
 
-    io::send_encrypted(
-        stream,
-        PacketId::GuildCreate,
-        seq,
-        &to_payload(&info),
-        crypto,
-    )
-    .await?;
+    io::send_frame(stream, PacketId::GuildCreate, seq, &to_payload(&info)).await?;
 
     debug!(
         "guild: {} created {} (owner={})",
@@ -72,7 +63,6 @@ pub async fn handle_guild_delete(
     seq: &mut u32,
     session_id: &str,
     payload: &[u8],
-    crypto: &SessionCrypto,
     state: &State,
 ) -> Result<()> {
     let guard = state.access.write().await;
@@ -93,7 +83,6 @@ pub async fn handle_guild_delete(
             seq,
             crate::proto::ErrorCode::PermissionDenied,
             "only owner can delete guild",
-            crypto,
         )
         .await?;
         return Ok(());
@@ -114,14 +103,13 @@ pub async fn handle_guild_delete(
         .await?;
 
     drop(guard);
-    io::send_encrypted(
+    io::send_frame(
         stream,
         PacketId::GuildDelete,
         seq,
         &to_payload(&crate::proto::GuildDeletePayload {
             guild_id: req.guild_id.clone(),
         }),
-        crypto,
     )
     .await?;
     Ok(())

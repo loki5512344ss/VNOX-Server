@@ -327,7 +327,7 @@ fn rate_limit_and_content_boundaries() {
 
 #[tokio::test]
 async fn lnex_management_rejects_stranger_and_creates_only_for_owner() {
-    use crate::proto::{PacketId, SessionCrypto, WebhookRequest, flags, to_payload};
+    use crate::proto::{PacketId, WebhookRequest, to_payload};
     let (s, _, _) = fixture().await;
     let req = WebhookRequest {
         id: String::new(),
@@ -343,13 +343,11 @@ async fn lnex_management_rejects_stranger_and_creates_only_for_owner() {
         ("owner", PacketId::WebhookResult),
     ] {
         let session = session::create(&s.sessions, user.into(), user.into()).await;
-        let crypto = SessionCrypto::derive(&[3; 32], &session.session_id);
         let (mut stream, mut peer) = tokio::io::duplex(65536);
         let mut seq = 0;
         let mut ctx = crate::handler::Ctx {
             stream: &mut stream,
             seq: &mut seq,
-            crypto: &crypto,
             state: &s,
         };
         management::handle(
@@ -362,7 +360,10 @@ async fn lnex_management_rejects_stranger_and_creates_only_for_owner() {
         .unwrap();
         let (header, _) = crate::net::io::read_packet(&mut peer).await.unwrap();
         assert_eq!(header.packet_id, expected as u16);
-        assert_ne!(header.flags & flags::ENCRYPTED, 0);
+        assert_eq!(
+            header.flags, 0,
+            "TLS protects the stream; frames carry no flags"
+        );
     }
     let hooks = s.storage.hooks("target").await.unwrap();
     assert_eq!(hooks.len(), 2);

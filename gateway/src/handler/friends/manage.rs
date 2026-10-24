@@ -6,8 +6,8 @@ use crate::{
     domain::session,
     net::{io, state::State},
     proto::{
-        BlockListPayload, BlockUserPayload, FriendRemovePayload, PacketId, SessionCrypto,
-        SimpleResponsePayload, UnblockUserPayload, to_payload,
+        BlockListPayload, BlockUserPayload, FriendRemovePayload, PacketId, SimpleResponsePayload,
+        UnblockUserPayload, to_payload,
     },
 };
 
@@ -16,7 +16,6 @@ pub async fn handle_friend_remove(
     seq: &mut u32,
     session_id: &str,
     payload: &[u8],
-    crypto: &SessionCrypto,
     state: &State,
 ) -> Result<()> {
     let req = FriendRemovePayload::decode(payload)?;
@@ -29,7 +28,7 @@ pub async fn handle_friend_remove(
         .remove_friend(&sess.user_id, &req.user_id)
         .await?;
 
-    io::send_encrypted(
+    io::send_frame(
         stream,
         PacketId::FriendRemove,
         seq,
@@ -38,7 +37,6 @@ pub async fn handle_friend_remove(
             user_id: None,
             role_id: None,
         }),
-        crypto,
     )
     .await?;
     Ok(())
@@ -49,7 +47,6 @@ pub async fn handle_block_user(
     seq: &mut u32,
     session_id: &str,
     payload: &[u8],
-    crypto: &SessionCrypto,
     state: &State,
 ) -> Result<()> {
     let req = BlockUserPayload::decode(payload)?;
@@ -62,7 +59,7 @@ pub async fn handle_block_user(
         .block_user(&sess.user_id, &req.user_id)
         .await?;
 
-    io::send_encrypted(
+    io::send_frame(
         stream,
         PacketId::BlockUser,
         seq,
@@ -71,7 +68,6 @@ pub async fn handle_block_user(
             user_id: None,
             role_id: None,
         }),
-        crypto,
     )
     .await?;
     Ok(())
@@ -82,7 +78,6 @@ pub async fn handle_unblock_user(
     seq: &mut u32,
     session_id: &str,
     payload: &[u8],
-    crypto: &SessionCrypto,
     state: &State,
 ) -> Result<()> {
     let req = UnblockUserPayload::decode(payload)?;
@@ -95,7 +90,7 @@ pub async fn handle_unblock_user(
         .unblock_user(&sess.user_id, &req.user_id)
         .await?;
 
-    io::send_encrypted(
+    io::send_frame(
         stream,
         PacketId::UnblockUser,
         seq,
@@ -104,7 +99,6 @@ pub async fn handle_unblock_user(
             user_id: None,
             role_id: None,
         }),
-        crypto,
     )
     .await?;
     Ok(())
@@ -114,7 +108,6 @@ pub async fn handle_block_list(
     stream: &mut (impl AsyncRead + AsyncWrite + Unpin),
     seq: &mut u32,
     session_id: &str,
-    crypto: &SessionCrypto,
     state: &State,
 ) -> Result<()> {
     let sess = session::get(&state.sessions, session_id)
@@ -123,12 +116,11 @@ pub async fn handle_block_list(
 
     let blocked = state.storage.list_blocks(&sess.user_id).await?;
 
-    io::send_encrypted(
+    io::send_frame(
         stream,
         PacketId::BlockList,
         seq,
         &to_payload(&BlockListPayload { blocked }),
-        crypto,
     )
     .await?;
     Ok(())

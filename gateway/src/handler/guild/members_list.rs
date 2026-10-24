@@ -8,7 +8,7 @@ use crate::{
     proto::{
         GuildMemberInfoPayload, GuildMemberListFetchPayload, GuildMemberListPayload,
         GuildRoleInfoPayload, GuildRoleListFetchPayload, GuildRoleListPayload, PacketId,
-        RoleAssignPayload, SessionCrypto, to_payload,
+        RoleAssignPayload, to_payload,
     },
 };
 
@@ -20,7 +20,6 @@ pub async fn handle_member_list_fetch(
     seq: &mut u32,
     session_id: &str,
     payload: &[u8],
-    crypto: &SessionCrypto,
     state: &State,
 ) -> Result<()> {
     let req = GuildMemberListFetchPayload::decode(payload)?;
@@ -41,7 +40,6 @@ pub async fn handle_member_list_fetch(
             seq,
             crate::proto::ErrorCode::PermissionDenied,
             "guild membership required",
-            crypto,
         )
         .await?;
         return Ok(());
@@ -70,14 +68,7 @@ pub async fn handle_member_list_fetch(
         guild_id: req.guild_id,
         members,
     };
-    io::send_encrypted(
-        stream,
-        PacketId::GuildMemberList,
-        seq,
-        &to_payload(&resp),
-        crypto,
-    )
-    .await?;
+    io::send_frame(stream, PacketId::GuildMemberList, seq, &to_payload(&resp)).await?;
     Ok(())
 }
 
@@ -87,7 +78,6 @@ pub async fn handle_role_assign(
     seq: &mut u32,
     session_id: &str,
     payload: &[u8],
-    crypto: &SessionCrypto,
     state: &State,
 ) -> Result<()> {
     let req = RoleAssignPayload::decode(payload)?;
@@ -111,7 +101,6 @@ pub async fn handle_role_assign(
             seq,
             crate::proto::ErrorCode::PermissionDenied,
             "missing MANAGE_ROLES permission",
-            crypto,
         )
         .await?;
         return Ok(());
@@ -137,7 +126,6 @@ pub async fn handle_role_assign(
             seq,
             crate::proto::ErrorCode::PermissionDenied,
             "role or target not permitted in this guild",
-            crypto,
         )
         .await?;
         return Ok(());
@@ -160,7 +148,7 @@ pub async fn handle_role_assign(
 
     drop(access);
     // Confirm to caller.
-    io::send_encrypted(
+    io::send_frame(
         stream,
         PacketId::GuildRoleAssign,
         seq,
@@ -169,7 +157,6 @@ pub async fn handle_role_assign(
             user_id: req.user_id.clone(),
             role_id: req.role_id.clone(),
         }),
-        crypto,
     )
     .await?;
     Ok(())
@@ -181,7 +168,6 @@ pub async fn handle_role_unassign(
     seq: &mut u32,
     session_id: &str,
     payload: &[u8],
-    crypto: &SessionCrypto,
     state: &State,
 ) -> Result<()> {
     let req = RoleAssignPayload::decode(payload)?;
@@ -205,7 +191,6 @@ pub async fn handle_role_unassign(
             seq,
             crate::proto::ErrorCode::PermissionDenied,
             "missing MANAGE_ROLES permission",
-            crypto,
         )
         .await?;
         return Ok(());
@@ -231,7 +216,6 @@ pub async fn handle_role_unassign(
             seq,
             crate::proto::ErrorCode::PermissionDenied,
             "role or target not permitted in this guild",
-            crypto,
         )
         .await?;
         return Ok(());
@@ -255,7 +239,7 @@ pub async fn handle_role_unassign(
         .await?;
 
     drop(access);
-    io::send_encrypted(
+    io::send_frame(
         stream,
         PacketId::GuildRoleUnassign,
         seq,
@@ -264,7 +248,6 @@ pub async fn handle_role_unassign(
             user_id: req.user_id.clone(),
             role_id: req.role_id.clone(),
         }),
-        crypto,
     )
     .await?;
     Ok(())
@@ -276,7 +259,6 @@ pub async fn handle_role_list_fetch(
     seq: &mut u32,
     session_id: &str,
     payload: &[u8],
-    crypto: &SessionCrypto,
     state: &State,
 ) -> Result<()> {
     let req = GuildRoleListFetchPayload::decode(payload)?;
@@ -295,7 +277,6 @@ pub async fn handle_role_list_fetch(
             seq,
             crate::proto::ErrorCode::PermissionDenied,
             "guild membership required",
-            crypto,
         )
         .await?;
         return Ok(());
@@ -317,13 +298,6 @@ pub async fn handle_role_list_fetch(
         guild_id: req.guild_id,
         roles,
     };
-    io::send_encrypted(
-        stream,
-        PacketId::GuildRoleList,
-        seq,
-        &to_payload(&resp),
-        crypto,
-    )
-    .await?;
+    io::send_frame(stream, PacketId::GuildRoleList, seq, &to_payload(&resp)).await?;
     Ok(())
 }

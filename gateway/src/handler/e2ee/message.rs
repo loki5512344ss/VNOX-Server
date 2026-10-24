@@ -10,8 +10,8 @@ use crate::{
         state::{BroadcastMsg, State},
     },
     proto::{
-        self, E2eeDmHistoryPayload, E2eeDmMessagePayload, ErrorCode, PacketId, SessionCrypto,
-        encode_packet, to_payload,
+        self, E2eeDmHistoryPayload, E2eeDmMessagePayload, ErrorCode, PacketId, encode_packet,
+        to_payload,
     },
 };
 
@@ -20,7 +20,6 @@ pub async fn handle_e2ee_dm_message(
     seq: &mut u32,
     session_id: &str,
     payload: &[u8],
-    crypto: &SessionCrypto,
     state: &State,
 ) -> Result<()> {
     let msg = E2eeDmMessagePayload::decode(payload)?;
@@ -34,7 +33,7 @@ pub async fn handle_e2ee_dm_message(
     if !state.rate_limiter.try_consume(session_id) {
         state.metrics.inc(&state.metrics.rate_limited_events);
         warn!("rate-limited e2ee dm session {session_id}");
-        io::send_encrypted(
+        io::send_frame(
             stream,
             PacketId::Error,
             seq,
@@ -42,7 +41,6 @@ pub async fn handle_e2ee_dm_message(
                 code: ErrorCode::RateLimited as u32,
                 message: "you are sending messages too quickly".into(),
             }),
-            crypto,
         )
         .await?;
         return Ok(());
@@ -55,7 +53,7 @@ pub async fn handle_e2ee_dm_message(
         .ok_or_else(|| anyhow::anyhow!("user not in DM"))?;
 
     if state.storage.is_blocked(&other_id, &my_id).await? {
-        io::send_encrypted(
+        io::send_frame(
             stream,
             PacketId::Error,
             seq,
@@ -63,7 +61,6 @@ pub async fn handle_e2ee_dm_message(
                 code: proto::ErrorCode::Blocked as u32,
                 message: "blocked".into(),
             }),
-            crypto,
         )
         .await?;
         return Ok(());
@@ -103,14 +100,7 @@ pub async fn handle_e2ee_dm_message(
         warn!("e2ee dm recipient offline: {}", &other_id[..8]);
     }
 
-    io::send_encrypted(
-        stream,
-        PacketId::E2eeDmMessage,
-        seq,
-        &to_payload(&saved),
-        crypto,
-    )
-    .await?;
+    io::send_frame(stream, PacketId::E2eeDmMessage, seq, &to_payload(&saved)).await?;
     Ok(())
 }
 
@@ -119,7 +109,6 @@ pub async fn handle_e2ee_dm_history(
     seq: &mut u32,
     session_id: &str,
     payload: &[u8],
-    crypto: &SessionCrypto,
     state: &State,
 ) -> Result<()> {
     let req = E2eeDmHistoryPayload::decode(payload)?;
@@ -147,13 +136,6 @@ pub async fn handle_e2ee_dm_history(
         messages,
         limit: None,
     };
-    io::send_encrypted(
-        stream,
-        PacketId::E2eeDmHistory,
-        seq,
-        &to_payload(&resp),
-        crypto,
-    )
-    .await?;
+    io::send_frame(stream, PacketId::E2eeDmHistory, seq, &to_payload(&resp)).await?;
     Ok(())
 }

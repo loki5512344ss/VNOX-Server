@@ -5,7 +5,7 @@ use tokio::io::{AsyncRead, AsyncWrite};
 use crate::{
     domain::{permissions::Permissions, session},
     net::{io, state::State},
-    proto::{PacketId, RoleCreatePayload, RoleDeletePayload, SessionCrypto, to_payload},
+    proto::{PacketId, RoleCreatePayload, RoleDeletePayload, to_payload},
 };
 
 use super::send_err;
@@ -15,7 +15,6 @@ pub async fn handle_role_create(
     seq: &mut u32,
     session_id: &str,
     payload: &[u8],
-    crypto: &SessionCrypto,
     state: &State,
 ) -> Result<()> {
     let req = RoleCreatePayload::decode(payload)?;
@@ -38,7 +37,6 @@ pub async fn handle_role_create(
             seq,
             crate::proto::ErrorCode::PermissionDenied,
             "missing MANAGE_ROLES permission",
-            crypto,
         )
         .await?;
         return Ok(());
@@ -57,7 +55,6 @@ pub async fn handle_role_create(
             seq,
             crate::proto::ErrorCode::PermissionDenied,
             "cannot grant requested role",
-            crypto,
         )
         .await?;
         return Ok(());
@@ -79,7 +76,7 @@ pub async fn handle_role_create(
         )
         .await?;
     drop(access);
-    io::send_encrypted(
+    io::send_frame(
         stream,
         PacketId::RoleCreate,
         seq,
@@ -90,7 +87,6 @@ pub async fn handle_role_create(
             permissions: req.permissions,
             id: role_id,
         }),
-        crypto,
     )
     .await?;
     Ok(())
@@ -101,7 +97,6 @@ pub async fn handle_role_delete(
     seq: &mut u32,
     session_id: &str,
     payload: &[u8],
-    crypto: &SessionCrypto,
     state: &State,
 ) -> Result<()> {
     let req = RoleDeletePayload::decode(payload)?;
@@ -124,7 +119,6 @@ pub async fn handle_role_delete(
             seq,
             crate::proto::ErrorCode::PermissionDenied,
             "missing MANAGE_ROLES permission",
-            crypto,
         )
         .await?;
         return Ok(());
@@ -137,7 +131,6 @@ pub async fn handle_role_delete(
             seq,
             crate::proto::ErrorCode::PermissionDenied,
             "role is outside this guild",
-            crypto,
         )
         .await?;
         return Ok(());
@@ -149,7 +142,6 @@ pub async fn handle_role_delete(
             seq,
             crate::proto::ErrorCode::PermissionDenied,
             "cannot manage requested role",
-            crypto,
         )
         .await?;
         return Ok(());
@@ -168,7 +160,7 @@ pub async fn handle_role_delete(
         )
         .await?;
     drop(access);
-    io::send_encrypted(
+    io::send_frame(
         stream,
         PacketId::RoleDelete,
         seq,
@@ -176,7 +168,6 @@ pub async fn handle_role_delete(
             guild_id: req.guild_id.clone(),
             role_id: req.role_id.clone(),
         }),
-        crypto,
     )
     .await?;
     Ok(())

@@ -38,7 +38,6 @@ async fn attempt_join(state: &State, session_id: &str, channel_id: &str) {
         &mut 0,
         session_id,
         channel_id,
-        &SessionCrypto::derive(&[7; 32], session_id),
         state,
         "127.0.0.1:12345".parse().unwrap(),
     )
@@ -169,29 +168,15 @@ async fn text_navigation_preserves_voice_and_leaving_unrelated_channel_is_noop()
             .contains(&sid)
     );
     let (mut stream, _) = tokio::io::duplex(65536);
-    super::super::leave(
-        &mut stream,
-        &mut 0,
-        &sid,
-        "general",
-        &SessionCrypto::derive(&[7; 32], &sid),
-        &state,
-    )
-    .await
-    .unwrap();
+    super::super::leave(&mut stream, &mut 0, &sid, "general", &state)
+        .await
+        .unwrap();
     let sess = session::get(&state.sessions, &sid).await.unwrap();
     assert_eq!(sess.channel_id.as_deref(), Some("other-text"));
     assert_eq!(sess.voice_channel_id.as_deref(), Some("voice"));
-    super::super::leave(
-        &mut stream,
-        &mut 0,
-        &sid,
-        "voice",
-        &SessionCrypto::derive(&[7; 32], &sid),
-        &state,
-    )
-    .await
-    .unwrap();
+    super::super::leave(&mut stream, &mut 0, &sid, "voice", &state)
+        .await
+        .unwrap();
     let sess = session::get(&state.sessions, &sid).await.unwrap();
     assert_eq!(sess.channel_id.as_deref(), Some("other-text"));
     assert_eq!(sess.voice_channel_id, None);
@@ -220,7 +205,6 @@ async fn channel_mutations_require_guild_authority_and_deletion_revokes_voice_cr
         .await
         .unwrap();
     let (mut stream, _peer) = tokio::io::duplex(65536);
-    let crypto = SessionCrypto::derive(&[7; 32], &sid);
     crate::handler::channel::handle_channel_edit(
         &mut stream,
         &mut 0,
@@ -229,7 +213,6 @@ async fn channel_mutations_require_guild_authority_and_deletion_revokes_voice_cr
             channel_id: "managed".into(),
             channel_name: "stolen".into(),
         }),
-        &crypto,
         &state,
     )
     .await
@@ -248,7 +231,6 @@ async fn channel_mutations_require_guild_authority_and_deletion_revokes_voice_cr
         &to_payload(&ChannelDeletePayload {
             channel_id: "managed".into(),
         }),
-        &crypto,
         &state,
     )
     .await
@@ -275,7 +257,6 @@ async fn channel_mutations_require_guild_authority_and_deletion_revokes_voice_cr
         &to_payload(&ChannelDeletePayload {
             channel_id: "managed".into(),
         }),
-        &crypto,
         &state,
     )
     .await
@@ -324,7 +305,6 @@ async fn guild_role_handlers_reject_cross_guild_targets_and_privilege_escalation
         .await
         .unwrap();
     let (mut stream, _peer) = tokio::io::duplex(65536);
-    let crypto = SessionCrypto::derive(&[7; 32], &sid);
     crate::handler::guild::handle_role_assign(
         &mut stream,
         &mut 0,
@@ -334,7 +314,6 @@ async fn guild_role_handlers_reject_cross_guild_targets_and_privilege_escalation
             user_id: "visitor".into(),
             role_id: foreign.clone(),
         }),
-        &crypto,
         &state,
     )
     .await
@@ -347,7 +326,6 @@ async fn guild_role_handlers_reject_cross_guild_targets_and_privilege_escalation
             guild_id: guild.clone(),
             role_id: foreign.clone(),
         }),
-        &crypto,
         &state,
     )
     .await
@@ -407,7 +385,6 @@ async fn guild_role_handlers_reject_cross_guild_targets_and_privilege_escalation
             user_id: "visitor".into(),
             role_id: powerful,
         }),
-        &crypto,
         &state,
     )
     .await
@@ -476,7 +453,6 @@ async fn removing_voice_role_revokes_existing_udp_membership() {
             user_id: "visitor".into(),
             role_id: role,
         }),
-        &SessionCrypto::derive(&[7; 32], &owner.session_id),
         &state,
     )
     .await
@@ -515,7 +491,6 @@ async fn private_channel_notifications_target_members_and_acknowledge_editor() {
     let member = session::create(&state.sessions, "member".into(), "Member".into()).await;
     let outsider = session::create(&state.sessions, "outsider".into(), "Outsider".into()).await;
     let mut events = state.broadcast.subscribe();
-    let crypto = SessionCrypto::derive(&[7; 32], &owner_sid);
     let (mut stream, _peer) = tokio::io::duplex(65536);
     let creation = ChannelCreatePayload {
         channel_id: "private-notification".into(),
@@ -528,7 +503,6 @@ async fn private_channel_notifications_target_members_and_acknowledge_editor() {
         &mut 0,
         &owner_sid,
         &to_payload(&creation),
-        &crypto,
         &state,
     )
     .await
@@ -541,7 +515,6 @@ async fn private_channel_notifications_target_members_and_acknowledge_editor() {
             channel_id: creation.channel_id.clone(),
             channel_name: "Renamed privately".into(),
         }),
-        &crypto,
         &state,
     )
     .await
@@ -553,7 +526,6 @@ async fn private_channel_notifications_target_members_and_acknowledge_editor() {
         &to_payload(&ChannelDeletePayload {
             channel_id: creation.channel_id.clone(),
         }),
-        &crypto,
         &state,
     )
     .await
@@ -607,7 +579,6 @@ async fn queued_targeted_history_is_rechecked_after_leave_or_guild_revoke() {
     use std::time::Duration;
     use tokio::io::AsyncReadExt;
     let (state, sid) = fixture().await;
-    let crypto = SessionCrypto::derive(&[7; 32], &sid);
     let history = |channel: &str| BroadcastMsg {
         channel_id: Some(channel.into()),
         exclude_session: None,
@@ -624,12 +595,11 @@ async fn queued_targeted_history_is_rechecked_after_leave_or_guild_revoke() {
     // The same queued target/channel envelope is deliverable while subscribed.
     let (mut stream, mut peer) = tokio::io::duplex(65536);
     let mut seq = 2;
-    crate::handler::deliver::deliver_encrypted(
+    crate::handler::deliver::deliver_frame(
         &mut stream,
         &mut seq,
         &sid,
         &history("general"),
-        &crypto,
         &state,
     )
     .await
@@ -642,16 +612,15 @@ async fn queued_targeted_history_is_rechecked_after_leave_or_guild_revoke() {
     );
     assert_eq!(seq, 3);
 
-    super::super::leave(&mut stream, &mut seq, &sid, "general", &crypto, &state)
+    super::super::leave(&mut stream, &mut seq, &sid, "general", &state)
         .await
         .unwrap();
     let (mut stream, mut peer) = tokio::io::duplex(65536);
-    crate::handler::deliver::deliver_encrypted(
+    crate::handler::deliver::deliver_frame(
         &mut stream,
         &mut seq,
         &sid,
         &history("general"),
-        &crypto,
         &state,
     )
     .await
@@ -696,16 +665,9 @@ async fn queued_targeted_history_is_rechecked_after_leave_or_guild_revoke() {
         super::super::revoke_guild_access(&state, &guild, Some("visitor")).await;
     }
     let (mut stream, mut peer) = tokio::io::duplex(65536);
-    crate::handler::deliver::deliver_encrypted(
-        &mut stream,
-        &mut seq,
-        &sid,
-        &queued,
-        &crypto,
-        &state,
-    )
-    .await
-    .unwrap();
+    crate::handler::deliver::deliver_frame(&mut stream, &mut seq, &sid, &queued, &state)
+        .await
+        .unwrap();
     assert_eq!(seq, 3);
     assert!(
         tokio::time::timeout(Duration::from_millis(15), peer.read_u8())

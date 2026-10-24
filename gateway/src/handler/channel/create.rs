@@ -8,7 +8,7 @@ use crate::{
     net::{io, state::State},
     proto::{
         ChannelCreatePayload, ChannelDeletePayload, ChannelListItem, ChannelListPayload,
-        ChannelStatePayload, PacketId, SessionCrypto, encode_packet, to_payload,
+        ChannelStatePayload, PacketId, encode_packet, to_payload,
     },
 };
 
@@ -19,7 +19,6 @@ pub async fn handle_channel_create(
     seq: &mut u32,
     session_id: &str,
     payload: &[u8],
-    crypto: &SessionCrypto,
     state: &State,
 ) -> Result<()> {
     let req = ChannelCreatePayload::decode(payload)?;
@@ -37,7 +36,7 @@ pub async fn handle_channel_create(
                 "channel_create from {}: invalid kind '{other}'",
                 sess.nickname
             );
-            io::send_encrypted(
+            io::send_frame(
                 stream,
                 PacketId::Error,
                 seq,
@@ -45,7 +44,6 @@ pub async fn handle_channel_create(
                     code: crate::proto::ErrorCode::InvalidPacket as u32,
                     message: format!("invalid channel kind: {other}"),
                 }),
-                crypto,
             )
             .await?;
             return Ok(());
@@ -65,7 +63,7 @@ pub async fn handle_channel_create(
         || channel_id.chars().any(char::is_control)
         || channel_name.chars().any(char::is_control)
     {
-        io::send_encrypted(
+        io::send_frame(
             stream,
             PacketId::Error,
             seq,
@@ -73,7 +71,6 @@ pub async fn handle_channel_create(
                 code: crate::proto::ErrorCode::InvalidPacket as u32,
                 message: "channel_id is required".into(),
             }),
-            crypto,
         )
         .await?;
         return Ok(());
@@ -84,7 +81,7 @@ pub async fn handle_channel_create(
     if !state.rate_limiter.try_consume(session_id) {
         state.metrics.inc(&state.metrics.rate_limited_events);
         warn!("rate-limited channel_create from {}", sess.nickname);
-        io::send_encrypted(
+        io::send_frame(
             stream,
             PacketId::Error,
             seq,
@@ -92,7 +89,6 @@ pub async fn handle_channel_create(
                 code: crate::proto::ErrorCode::RateLimited as u32,
                 message: "slow down — too many channel operations".into(),
             }),
-            crypto,
         )
         .await?;
         return Ok(());
@@ -101,7 +97,7 @@ pub async fn handle_channel_create(
     let access = state.access.write().await;
     if !super::may_manage(state, &sess.user_id, req.guild_id.as_deref()).await? {
         drop(access);
-        super::denied(stream, seq, crypto).await?;
+        super::denied(stream, seq).await?;
         return Ok(());
     }
 
@@ -133,7 +129,7 @@ pub async fn handle_channel_create(
 
     drop(access);
     if !created {
-        io::send_encrypted(
+        io::send_frame(
             stream,
             PacketId::Error,
             seq,
@@ -141,7 +137,6 @@ pub async fn handle_channel_create(
                 code: crate::proto::ErrorCode::ChannelNotFound as u32,
                 message: "channel already exists".into(),
             }),
-            crypto,
         )
         .await?;
         return Ok(());
@@ -164,14 +159,7 @@ pub async fn handle_channel_create(
         voice_endpoint: state.config.voice.bind.clone(),
         guild_id: req.guild_id.clone(),
     };
-    io::send_encrypted(
-        stream,
-        PacketId::ChannelState,
-        seq,
-        &to_payload(&sp),
-        crypto,
-    )
-    .await?;
+    io::send_frame(stream, PacketId::ChannelState, seq, &to_payload(&sp)).await?;
 
     super::notify_guild(
         state,
@@ -200,7 +188,6 @@ pub async fn handle_channel_delete(
     seq: &mut u32,
     session_id: &str,
     payload: &[u8],
-    crypto: &SessionCrypto,
     state: &State,
 ) -> Result<()> {
     let req = ChannelDeletePayload::decode(payload)?;
@@ -211,7 +198,7 @@ pub async fn handle_channel_delete(
 
     // Protect default channels from deletion.
     if req.channel_id == "general" || req.channel_id == "voice" {
-        io::send_encrypted(
+        io::send_frame(
             stream,
             PacketId::Error,
             seq,
@@ -219,7 +206,6 @@ pub async fn handle_channel_delete(
                 code: crate::proto::ErrorCode::PermissionDenied as u32,
                 message: "cannot delete default channels".into(),
             }),
-            crypto,
         )
         .await?;
         return Ok(());
@@ -235,7 +221,7 @@ pub async fn handle_channel_delete(
     .await?
     {
         drop(access);
-        super::denied(stream, seq, crypto).await?;
+        super::denied(stream, seq).await?;
         return Ok(());
     }
     state.storage.delete_channel(&req.channel_id).await?;
@@ -244,7 +230,7 @@ pub async fn handle_channel_delete(
     drop(access);
 
     if !existed {
-        io::send_encrypted(
+        io::send_frame(
             stream,
             PacketId::Error,
             seq,
@@ -252,7 +238,6 @@ pub async fn handle_channel_delete(
                 code: crate::proto::ErrorCode::ChannelNotFound as u32,
                 message: "channel not found".into(),
             }),
-            crypto,
         )
         .await?;
         return Ok(());
@@ -288,7 +273,6 @@ pub async fn handle_channel_list(
     seq: &mut u32,
     session_id: &str,
     payload: &[u8],
-    crypto: &SessionCrypto,
     state: &State,
 ) -> Result<()> {
     let Some(sess) = session::get(&state.sessions, session_id).await else {
@@ -329,6 +313,6 @@ pub async fn handle_channel_list(
         channels: items,
         guild_id: None,
     };
-    io::send_encrypted(stream, PacketId::ChannelList, seq, &to_payload(&p), crypto).await?;
+    io::send_frame(stream, PacketId::ChannelList, seq, &to_payload(&p)).await?;
     Ok(())
 }

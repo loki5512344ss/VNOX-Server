@@ -12,7 +12,6 @@ pub async fn handle_read_receipt(
     seq: &mut u32,
     session_id: &str,
     payload: &[u8],
-    _crypto: &crate::proto::SessionCrypto,
     state: &State,
 ) -> Result<()> {
     let req = ReadReceiptPayload::decode(payload)?;

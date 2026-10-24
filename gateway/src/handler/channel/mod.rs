@@ -117,9 +117,8 @@ pub(super) async fn may_manage(
 pub(super) async fn denied(
     stream: &mut (impl tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin),
     seq: &mut u32,
-    crypto: &crate::proto::SessionCrypto,
 ) -> anyhow::Result<()> {
-    crate::net::io::send_encrypted(
+    crate::net::io::send_frame(
         stream,
         PacketId::Error,
         seq,
@@ -127,7 +126,6 @@ pub(super) async fn denied(
             code: crate::proto::ErrorCode::PermissionDenied as u32,
             message: "guild MANAGE_CHANNELS permission required".into(),
         }),
-        crypto,
     )
     .await
 }

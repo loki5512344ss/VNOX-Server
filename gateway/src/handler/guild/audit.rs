@@ -6,8 +6,7 @@ use crate::{
     domain::permissions::Permissions,
     net::{io, state::State},
     proto::{
-        AuditLogEntryPayload, GuildAuditLogFetchPayload, GuildAuditLogPayload, PacketId,
-        SessionCrypto, to_payload,
+        AuditLogEntryPayload, GuildAuditLogFetchPayload, GuildAuditLogPayload, PacketId, to_payload,
     },
 };
 
@@ -17,7 +16,6 @@ pub async fn handle_audit_log_fetch(
     seq: &mut u32,
     session_id: &str,
     payload: &[u8],
-    crypto: &SessionCrypto,
     state: &State,
 ) -> Result<()> {
     let req = GuildAuditLogFetchPayload::decode(payload)?;
@@ -42,7 +40,7 @@ pub async fn handle_audit_log_fetch(
     };
 
     if !allowed {
-        io::send_encrypted(
+        io::send_frame(
             stream,
             PacketId::Error,
             seq,
@@ -50,7 +48,6 @@ pub async fn handle_audit_log_fetch(
                 code: crate::proto::ErrorCode::PermissionDenied as u32,
                 message: "audit log access requires MANAGE_GUILD".into(),
             }),
-            crypto,
         )
         .await?;
         return Ok(());
@@ -75,13 +72,6 @@ pub async fn handle_audit_log_fetch(
         guild_id: req.guild_id,
         entries,
     };
-    io::send_encrypted(
-        stream,
-        PacketId::GuildAuditLog,
-        seq,
-        &to_payload(&resp),
-        crypto,
-    )
-    .await?;
+    io::send_frame(stream, PacketId::GuildAuditLog, seq, &to_payload(&resp)).await?;
     Ok(())
 }

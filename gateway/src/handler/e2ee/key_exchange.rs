@@ -11,7 +11,7 @@ use crate::{
     },
     proto::{
         self, E2eeDmKeyExchangeAckPayload, E2eeDmKeyExchangePayload, ErrorCode, PacketId,
-        SessionCrypto, encode_packet, to_payload,
+        encode_packet, to_payload,
     },
 };
 
@@ -20,7 +20,6 @@ pub async fn handle_e2ee_key_exchange(
     seq: &mut u32,
     session_id: &str,
     payload: &[u8],
-    crypto: &SessionCrypto,
     state: &State,
 ) -> Result<()> {
     let msg = E2eeDmKeyExchangePayload::decode(payload)?;
@@ -38,7 +37,7 @@ pub async fn handle_e2ee_key_exchange(
         .ok_or_else(|| anyhow::anyhow!("user not in DM"))?;
 
     if state.storage.is_blocked(&other_id, &my_id).await? {
-        io::send_encrypted(
+        io::send_frame(
             stream,
             PacketId::Error,
             seq,
@@ -46,7 +45,6 @@ pub async fn handle_e2ee_key_exchange(
                 code: ErrorCode::Blocked as u32,
                 message: "blocked".into(),
             }),
-            crypto,
         )
         .await?;
         return Ok(());
@@ -78,12 +76,11 @@ pub async fn handle_e2ee_key_exchange(
         warn!("e2ee key exchange recipient offline: {}", &other_id[..8]);
     }
 
-    io::send_encrypted(
+    io::send_frame(
         stream,
         PacketId::E2eeDmKeyExchange,
         seq,
         &to_payload(&E2eeDmKeyExchangeAckPayload { dm_id: msg.dm_id }),
-        crypto,
     )
     .await?;
     Ok(())
@@ -94,7 +91,6 @@ pub async fn handle_e2ee_key_exchange_ack(
     _seq: &mut u32,
     session_id: &str,
     payload: &[u8],
-    _crypto: &SessionCrypto,
     state: &State,
 ) -> Result<()> {
     let msg = E2eeDmKeyExchangeAckPayload::decode(payload)?;

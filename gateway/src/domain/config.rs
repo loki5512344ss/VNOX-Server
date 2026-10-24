@@ -90,15 +90,32 @@ pub struct GatewayConfig {
     /// Defaults to 10.
     #[serde(default)]
     pub message_rate_burst: Option<u32>,
-    /// Enable TLS 1.3 on the TCP listener.
+    /// Deprecated. TLS 1.3 is always on since LNEx v3. `true` is accepted with a warning,
+    /// `false` is a startup error because plaintext is no longer supported.
     #[serde(default)]
-    pub tls_enabled: bool,
-    /// Path to TLS certificate file (PEM).
+    pub tls_enabled: Option<bool>,
+    /// Path to the TLS certificate chain (PEM, leaf first). Set together with `tls_key_path`.
+    /// When both are unset a self-signed certificate is generated in `data_dir/tls/`.
     #[serde(default)]
     pub tls_cert_path: Option<String>,
-    /// Path to TLS private key file (PEM).
+    /// Path to the TLS private key (PEM).
     #[serde(default)]
     pub tls_key_path: Option<String>,
+}
+
+impl GatewayConfig {
+    /// Reject configurations that would weaken or break the mandatory TLS 1.3 listener.
+    pub fn validate_tls(&self) -> Result<()> {
+        if self.tls_enabled == Some(false) {
+            anyhow::bail!(
+                "gateway.tls_enabled = false is no longer supported: LNEx v3 requires TLS 1.3; remove the option"
+            );
+        }
+        if self.tls_cert_path.is_some() != self.tls_key_path.is_some() {
+            anyhow::bail!("gateway.tls_cert_path and gateway.tls_key_path must be set together");
+        }
+        Ok(())
+    }
 }
 
 #[derive(Debug, Deserialize)]
@@ -124,4 +141,34 @@ pub fn load() -> Result<Config> {
         .map_err(|e| anyhow::anyhow!("cannot read config {path}: {e}"))?;
 
     toml::from_str(&text).map_err(|e| anyhow::anyhow!("invalid config: {e}"))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn gateway(extra: &str) -> GatewayConfig {
+        toml::from_str(&format!("bind = \"127.0.0.1:0\"\n{extra}")).unwrap()
+    }
+
+    #[test]
+    fn tls_defaults_to_generated_certificate() {
+        gateway("").validate_tls().unwrap();
+    }
+
+    #[test]
+    fn plaintext_opt_out_is_a_startup_error() {
+        let error = gateway("tls_enabled = false").validate_tls().unwrap_err();
+        assert!(error.to_string().contains("TLS 1.3"));
+        gateway("tls_enabled = true").validate_tls().unwrap();
+    }
+
+    #[test]
+    fn certificate_and_key_must_be_configured_together() {
+        assert!(gateway("tls_cert_path = \"c.pem\"").validate_tls().is_err());
+        assert!(gateway("tls_key_path = \"k.pem\"").validate_tls().is_err());
+        gateway("tls_cert_path = \"c.pem\"\ntls_key_path = \"k.pem\"")
+            .validate_tls()
+            .unwrap();
+    }
 }

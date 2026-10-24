@@ -10,7 +10,7 @@ use crate::{
     },
     proto::{
         PacketId, PresenceEventPayload, PresenceInfo, PresenceSyncPayload, PresenceUpdatePayload,
-        SessionCrypto, encode_packet, to_payload,
+        encode_packet, to_payload,
     },
 };
 
@@ -33,7 +33,6 @@ pub async fn handle_presence_update(
     seq: &mut u32,
     session_id: &str,
     payload: &[u8],
-    _crypto: &SessionCrypto,
     state: &State,
 ) -> Result<()> {
     let req = PresenceUpdatePayload::decode(payload)?;
@@ -99,7 +98,6 @@ pub async fn handle_presence_sync(
     stream: &mut (impl AsyncRead + AsyncWrite + Unpin),
     seq: &mut u32,
     session_id: &str,
-    crypto: &SessionCrypto,
     state: &State,
 ) -> Result<()> {
     let _sess = session::get(&state.sessions, session_id)
@@ -108,12 +106,11 @@ pub async fn handle_presence_sync(
 
     let presences: Vec<PresenceInfo> = state.presences.read().await.values().cloned().collect();
 
-    io::send_encrypted(
+    io::send_frame(
         stream,
         PacketId::PresenceSync,
         seq,
         &to_payload(&PresenceSyncPayload { presences }),
-        crypto,
     )
     .await?;
     Ok(())
