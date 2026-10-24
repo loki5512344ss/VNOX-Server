@@ -18,6 +18,26 @@ pub const MAX_FAILURES: i64 = 5;
 /// Pending attempts kept at once; protects the table from being filled by anonymous traffic.
 const MAX_PENDING: i64 = 4096;
 const CODE_DIGITS: usize = 8;
+/// Resends per chain that may use the reserved global budget.
+pub const MAX_RESENDS: i64 = 3;
+/// Seconds after which a chain of resends stops qualifying for the reserve.
+const CHAIN_LIFETIME: i64 = 1800;
+
+/// Position in a resend chain carried from a claimed attempt to its replacement.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Chain {
+    resends: i64,
+    started: i64,
+}
+
+/// Result of [`EmailAuth::reserve_send`].
+pub enum Reservation {
+    Denied,
+    /// `chain` is set when the request replaced a live attempt for the same address.
+    Allowed {
+        chain: Option<Chain>,
+    },
+}
 
 /// Delivery boundary. The production implementation is [`crate::mail::Mailer`]; tests
 /// inject a recorder so no network traffic or real mail is ever produced.
@@ -106,19 +126,43 @@ impl EmailAuth {
         self.mac("vnox-email-source-v1", &[source])
     }
 
-    /// Atomically checks every send budget and records the send in one statement, so
-    /// concurrent requests cannot overshoot a limit.
+    /// Checks every send budget and records the send, in one transaction.
+    ///
+    /// A request carrying the cookie of a live attempt for the *same address* (fewer than
+    /// [`MAX_FAILURES`] failures, fewer than [`MAX_RESENDS`] earlier resends, chain younger
+    /// than 30 minutes) claims that attempt by deleting it inside the transaction, which
+    /// makes the claim exclusive (parallel resends cannot both win it, chains cannot
+    /// branch) and rolls back with the rest if any budget refuses. Only a claimed request
+    /// may spend the global reserve.
     pub async fn reserve_send(
         &self,
         pool: &SqlitePool,
         email_mac: &str,
         source_mac: &str,
-        resend: bool,
-    ) -> anyhow::Result<bool> {
+        browser: Option<&str>,
+    ) -> anyhow::Result<Reservation> {
         let t = now();
         let limits = self.limits;
+        let mut transaction = pool.begin().await?;
+        let claimed: Option<(i64, i64)> = match browser {
+            Some(browser) => {
+                sqlx::query_as(
+                    "DELETE FROM email_attempts WHERE browser_hash=? AND email_mac=? AND expires_at>? \
+                     AND failures<? AND resends<? AND chain_started>? RETURNING resends,chain_started",
+                )
+                .bind(hash(browser))
+                .bind(email_mac)
+                .bind(t)
+                .bind(MAX_FAILURES)
+                .bind(MAX_RESENDS)
+                .bind(t - CHAIN_LIFETIME)
+                .fetch_optional(&mut *transaction)
+                .await?
+            }
+            None => None,
+        };
         let global_limit = limits.global_hour
-            + if resend {
+            + if claimed.is_some() {
                 limits.global_resend_reserve
             } else {
                 0
@@ -143,21 +187,19 @@ impl EmailAuth {
         .bind(limits.per_source_hour)
         .bind(t - 3600)
         .bind(global_limit)
-        .execute(pool)
+        .execute(&mut *transaction)
         .await?;
-        Ok(result.rows_affected() == 1)
-    }
-
-    /// True when this browser cookie maps to an unexpired pending attempt.
-    pub async fn has_pending(&self, pool: &SqlitePool, browser: &str) -> anyhow::Result<bool> {
-        let found: Option<i64> = sqlx::query_scalar(
-            "SELECT 1 FROM email_attempts WHERE browser_hash=? AND expires_at>?",
-        )
-        .bind(hash(browser))
-        .bind(now())
-        .fetch_optional(pool)
-        .await?;
-        Ok(found.is_some())
+        if result.rows_affected() != 1 {
+            transaction.rollback().await?;
+            return Ok(Reservation::Denied);
+        }
+        transaction.commit().await?;
+        Ok(Reservation::Allowed {
+            chain: claimed.map(|(resends, started)| Chain {
+                resends: resends + 1,
+                started,
+            }),
+        })
     }
 
     /// Stores a new pending attempt, replacing the one bound to the browser's previous
@@ -168,6 +210,7 @@ impl EmailAuth {
         email: &str,
         browser: &str,
         previous_browser: Option<&str>,
+        chain: Option<Chain>,
     ) -> anyhow::Result<(String, String)> {
         let mut transaction = pool.begin().await?;
         if let Some(previous) = previous_browser {
@@ -184,13 +227,15 @@ impl EmailAuth {
         let code = generate_code();
         let email_mac = self.email_mac(email);
         sqlx::query(
-            "INSERT INTO email_attempts(attempt_id,browser_hash,email_mac,code_mac,expires_at) VALUES(?,?,?,?,?)",
+            "INSERT INTO email_attempts(attempt_id,browser_hash,email_mac,code_mac,expires_at,resends,chain_started) VALUES(?,?,?,?,?,?,?)",
         )
         .bind(&attempt_id)
         .bind(hash(browser))
         .bind(&email_mac)
         .bind(self.code_mac(&attempt_id, &email_mac, &code))
         .bind(now() + CODE_TTL)
+        .bind(chain.map_or(0, |c| c.resends))
+        .bind(chain.map_or_else(now, |c| c.started))
         .execute(&mut *transaction)
         .await?;
         transaction.commit().await?;

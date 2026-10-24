@@ -220,23 +220,26 @@ async fn email_start(
     let lang = Lang::from_tag(body.lang.as_deref());
     let source = mail.source_mac(&client_ip(&headers));
     let previous = cookie(&headers, EMAIL_BROWSER);
-    let resend = match &previous {
-        Some(browser) => mail.has_pending(&auth.pool, browser).await.unwrap_or(false),
-        None => false,
-    };
-    let reserved = mail
-        .reserve_send(&auth.pool, &mail.email_mac(&address), &source, resend)
-        .await;
-    match reserved {
-        Ok(true) => {}
-        Ok(false) => return failure(StatusCode::TOO_MANY_REQUESTS, "try_later"),
+    let chain = match mail
+        .reserve_send(
+            &auth.pool,
+            &mail.email_mac(&address),
+            &source,
+            previous.as_deref(),
+        )
+        .await
+    {
+        Ok(email::Reservation::Allowed { chain }) => chain,
+        Ok(email::Reservation::Denied) => {
+            return failure(StatusCode::TOO_MANY_REQUESTS, "try_later");
+        }
         Err(_) => return failure(StatusCode::SERVICE_UNAVAILABLE, "try_later"),
-    }
+    };
     // Housekeeping failures must not block sign-in; expiry is enforced on every read.
     let _ = store::cleanup(&auth.pool).await;
     let browser = store::token();
     let Ok((attempt_id, code)) = mail
-        .create_attempt(&auth.pool, &address, &browser, previous.as_deref())
+        .create_attempt(&auth.pool, &address, &browser, previous.as_deref(), chain)
         .await
     else {
         return failure(StatusCode::SERVICE_UNAVAILABLE, "try_later");

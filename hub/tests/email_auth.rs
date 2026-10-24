@@ -910,3 +910,113 @@ async fn global_reserve_serves_only_resends_from_a_live_attempt() {
     assert_eq!(status, StatusCode::TOO_MANY_REQUESTS);
     assert!(cookies.is_empty());
 }
+
+fn reserve_limits() -> EmailLimits {
+    EmailLimits {
+        address_cooldown: 0,
+        per_address_hour: 1000,
+        per_source_hour: 1000,
+        global_hour: 1,
+        global_resend_reserve: 100,
+    }
+}
+
+async fn resend(h: &Harness, cookie: &str, email: &str) -> (StatusCode, Vec<String>) {
+    let mut request = post("/v1/auth/email/start", json!({"email": email}));
+    request.cookie = Some(cookie);
+    let (status, cookies, _) = send(&h.app, request.request()).await;
+    (status, cookies)
+}
+
+#[tokio::test]
+async fn reserve_is_not_available_for_a_different_address() {
+    let h = harness_with(reserve_limits(), false, true).await;
+    let browser = start(&h, "a@example.com").await;
+    // The normal budget (1) is spent. A live attempt for a@ must not open the reserve
+    // for sending to anyone else.
+    assert_eq!(
+        resend(&h, &browser, "victim@example.com").await.0,
+        StatusCode::TOO_MANY_REQUESTS
+    );
+    assert_eq!(
+        resend(&h, &browser, "a@example.com").await.0,
+        StatusCode::ACCEPTED
+    );
+    assert_eq!(h.mail.count(), 2);
+}
+
+#[tokio::test]
+async fn resend_chain_is_bounded() {
+    let h = harness_with(reserve_limits(), false, true).await;
+    let mut browser = start(&h, "a@example.com").await;
+    for i in 0..3 {
+        let (status, cookies) = resend(&h, &browser, "a@example.com").await;
+        assert_eq!(status, StatusCode::ACCEPTED, "resend {i}");
+        browser = pair(&cookies, "__Host-vnox_email");
+    }
+    // Reserve is still plentiful, but the chain has used its three resends.
+    assert_eq!(
+        resend(&h, &browser, "a@example.com").await.0,
+        StatusCode::TOO_MANY_REQUESTS
+    );
+    assert_eq!(h.mail.count(), 4);
+    // The refused request rolled back: the live attempt still verifies.
+    let code = h.mail.last_code();
+    assert_eq!(
+        verify(&h, Some(&browser), "a@example.com", &code).await.0,
+        StatusCode::OK
+    );
+}
+
+#[tokio::test]
+async fn old_chains_and_attempts_with_spent_tries_lose_the_reserve() {
+    let h = harness_with(reserve_limits(), false, true).await;
+    let browser = start(&h, "a@example.com").await;
+    sqlx::query("UPDATE email_attempts SET failures=5")
+        .execute(&h.state.database)
+        .await
+        .unwrap();
+    assert_eq!(
+        resend(&h, &browser, "a@example.com").await.0,
+        StatusCode::TOO_MANY_REQUESTS
+    );
+    sqlx::query("UPDATE email_attempts SET failures=0, chain_started=chain_started-3600")
+        .execute(&h.state.database)
+        .await
+        .unwrap();
+    assert_eq!(
+        resend(&h, &browser, "a@example.com").await.0,
+        StatusCode::TOO_MANY_REQUESTS
+    );
+}
+
+#[tokio::test]
+async fn parallel_resends_claim_a_live_attempt_only_once() {
+    let h = harness_with(reserve_limits(), false, true).await;
+    let browser = start(&h, "a@example.com").await;
+    let mut tasks = Vec::new();
+    for _ in 0..6 {
+        let app = h.app.clone();
+        let browser = browser.clone();
+        tasks.push(tokio::spawn(async move {
+            let mut request = post("/v1/auth/email/start", json!({"email": "a@example.com"}));
+            request.cookie = Some(&browser);
+            send(&app, request.request()).await.0
+        }));
+    }
+    let mut accepted = 0;
+    for task in tasks {
+        if task.await.unwrap() == StatusCode::ACCEPTED {
+            accepted += 1;
+        }
+    }
+    assert_eq!(accepted, 1);
+    assert_eq!(h.mail.count(), 2);
+    assert_eq!(
+        sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM email_attempts")
+            .fetch_one(&h.state.database)
+            .await
+            .unwrap(),
+        1
+    );
+}
