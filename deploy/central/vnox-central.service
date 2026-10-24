@@ -1,0 +1,32 @@
+[Unit]
+Description=Vnox Central Hub
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=vnox-central
+Group=vnox-central
+WorkingDirectory=/var/lib/vnox-central
+EnvironmentFile=/etc/vnox-central/hub.env
+ExecStart=/opt/vnox-central/current/vnox-hub
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=30
+StateDirectory=vnox-central
+StateDirectoryMode=0700
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectHome=true
+ProtectSystem=strict
+ReadWritePaths=/var/lib/vnox-central
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+UMask=0077
+LimitNOFILE=8192
+
+[Install]
+WantedBy=multi-user.target

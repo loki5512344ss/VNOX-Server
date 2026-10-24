@@ -4,6 +4,7 @@ members = [
     "gateway",
     "voice-node",
     "serverd",
+    "hub",
 ]
 
 [workspace.package]
