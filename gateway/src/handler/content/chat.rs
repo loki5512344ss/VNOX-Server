@@ -48,15 +48,12 @@ pub async fn handle(session_id: &str, mut msg: ChatMessagePayload, state: &State
 
     let _ = state.broadcast.send(BroadcastMsg {
         channel_id: Some(msg.channel_id.clone()),
-        exclude_session: Some(session_id.into()),
+        exclude_session: None,
         target_session_id: None,
         data: encode_packet(PacketId::ChatMessage, 0, &to_payload(&msg)),
     });
 
-    debug!(
-        "chat {} → {}: {}",
-        sess.nickname, msg.channel_id, msg.content
-    );
+    debug!(channel=%msg.channel_id,message_id=%msg.message_id,"chat message accepted");
     Ok(())
 }
 

@@ -1,14 +1,11 @@
 use anyhow::Result;
 use prost::Message;
 use tokio::io::{AsyncRead, AsyncWrite};
-use tracing::{info, warn};
+use tracing::info;
 
 use crate::{
     domain::{channels, session},
-    net::{
-        io,
-        state::{BroadcastMsg, State},
-    },
+    net::{io, state::State},
     proto::{ChannelEditPayload, PacketId, SessionCrypto, encode_packet, to_payload},
 };
 
@@ -29,7 +26,12 @@ pub async fn handle_channel_edit(
     let channel_id = req.channel_id.trim().to_string();
     let channel_name = req.channel_name.trim().to_string();
 
-    if channel_id.is_empty() || channel_name.is_empty() {
+    if channel_id.is_empty()
+        || channel_name.is_empty()
+        || channel_id.len() > 128
+        || channel_name.chars().count() > 100
+        || channel_name.chars().any(char::is_control)
+    {
         io::send_encrypted(
             stream,
             PacketId::Error,
@@ -44,8 +46,26 @@ pub async fn handle_channel_edit(
         return Ok(());
     }
 
+    let access = state.access.write().await;
+    let channel = channels::get_channel(&state.channels, &channel_id).await;
+    if !super::may_manage(
+        state,
+        &sess.user_id,
+        channel.as_ref().and_then(|c| c.guild_id.as_deref()),
+    )
+    .await?
+    {
+        drop(access);
+        super::denied(stream, seq, crypto).await?;
+        return Ok(());
+    }
+    state
+        .storage
+        .update_channel(&channel_id, &channel_name)
+        .await?;
     let renamed = channels::rename(&state.channels, &channel_id, &channel_name).await;
 
+    drop(access);
     if !renamed {
         io::send_encrypted(
             stream,
@@ -61,24 +81,18 @@ pub async fn handle_channel_edit(
         return Ok(());
     }
 
-    if let Err(e) = state
-        .storage
-        .update_channel(&channel_id, &channel_name)
-        .await
-    {
-        warn!("failed to update channel in storage: {e}");
-    }
-
     info!(
         "channel_edit: '{}' renamed to '{}' by {}",
         channel_id, channel_name, sess.nickname
     );
 
-    let _ = state.broadcast.send(BroadcastMsg {
-        channel_id: Some(channel_id.clone()),
-        exclude_session: Some(session_id.into()),
-        target_session_id: None,
-        data: encode_packet(
+    super::notify_guild(
+        state,
+        channel
+            .as_ref()
+            .and_then(|channel| channel.guild_id.as_deref()),
+        None,
+        encode_packet(
             PacketId::ChannelEdit,
             0,
             &to_payload(&ChannelEditPayload {
@@ -86,7 +100,8 @@ pub async fn handle_channel_edit(
                 channel_name: channel_name.clone(),
             }),
         ),
-    });
+    )
+    .await?;
 
     Ok(())
 }

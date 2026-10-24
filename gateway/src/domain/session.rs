@@ -9,7 +9,9 @@ pub struct Session {
     pub token: String,
     pub user_id: String,
     pub nickname: String,
+    /// Viewed text channel; independent of the active voice room.
     pub channel_id: Option<String>,
+    pub voice_channel_id: Option<String>,
 }
 
 pub type SessionStore = Arc<RwLock<HashMap<String, Session>>>;
@@ -25,6 +27,7 @@ pub async fn create(store: &SessionStore, user_id: String, nickname: String) -> 
         user_id,
         nickname,
         channel_id: None,
+        voice_channel_id: None,
     };
     store.write().await.insert(s.session_id.clone(), s.clone());
     s

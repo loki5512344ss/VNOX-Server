@@ -48,13 +48,33 @@ pub async fn handle<S: AsyncRead + AsyncWrite + Unpin>(
     let Some(session) = crate::domain::session::get(&ctx.state.sessions, session_id).await else {
         return Ok(());
     };
-    if !ctx.state.rate_limiter.try_consume(session_id) {
-        return error(ctx, "rate limited").await;
-    }
     if payload.len() > 8192 {
-        return error(ctx, "webhook management payload too large").await;
+        return error(
+            ctx,
+            "",
+            ErrorCode::InvalidPacket,
+            "webhook management payload too large",
+        )
+        .await;
     }
     let req = WebhookRequest::decode(payload)?;
+    let request_id = req.request_id.clone();
+    if request_id.len() > 64
+        || !request_id
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || b == b'-')
+    {
+        return error(
+            ctx,
+            "",
+            ErrorCode::InvalidPacket,
+            "invalid request identifier",
+        )
+        .await;
+    }
+    if !ctx.state.rate_limiter.try_consume(session_id) {
+        return error(ctx, &request_id, ErrorCode::RateLimited, "rate limited").await;
+    }
     let existing = if pid == PacketId::WebhookRotate || pid == PacketId::WebhookRevoke {
         ctx.state.storage.hook(&req.id).await?
     } else {
@@ -65,7 +85,13 @@ pub async fn handle<S: AsyncRead + AsyncWrite + Unpin>(
         .map(|h| h.channel_id.as_str())
         .unwrap_or(&req.channel_id);
     let Some(guild) = authorize(ctx.state, &session.user_id, channel).await? else {
-        return error(ctx, "permission denied").await;
+        return error(
+            ctx,
+            &request_id,
+            ErrorCode::PermissionDenied,
+            "permission denied",
+        )
+        .await;
     };
     if pid == PacketId::WebhookList {
         let hooks = ctx
@@ -80,7 +106,7 @@ pub async fn handle<S: AsyncRead + AsyncWrite + Unpin>(
             ctx.stream,
             PacketId::WebhookListResult,
             ctx.seq,
-            &to_payload(&WebhookListResult { hooks }),
+            &to_payload(&WebhookListResult { hooks, request_id }),
             ctx.crypto,
         )
         .await;
@@ -91,17 +117,25 @@ pub async fn handle<S: AsyncRead + AsyncWrite + Unpin>(
             || req.name.chars().count() > 64
             || req.name.chars().any(char::is_control)
         {
-            return error(ctx, "invalid name").await;
+            return error(ctx, &request_id, ErrorCode::InvalidPacket, "invalid name").await;
         }
         if !matches!(
             (req.direction.as_str(), req.provider.as_str()),
             ("incoming", "generic" | "github") | ("outgoing", "generic")
         ) {
-            return error(ctx, "unsupported webhook type").await;
+            return error(
+                ctx,
+                &request_id,
+                ErrorCode::InvalidPacket,
+                "unsupported webhook type",
+            )
+            .await;
         }
         if req.direction == "outgoing" && policy::endpoint(&req.endpoint).is_err() {
             return error(
                 ctx,
+                &request_id,
+                ErrorCode::InvalidPacket,
                 "HTTPS public endpoint required; no credentials/query/fragment",
             )
             .await;
@@ -110,7 +144,13 @@ pub async fn handle<S: AsyncRead + AsyncWrite + Unpin>(
         secret = secrets::new_secret();
         let sealed = if req.direction == "outgoing" || req.provider == "github" {
             let Some(key) = ctx.state.webhooks.key() else {
-                return error(ctx, "webhook master key not configured").await;
+                return error(
+                    ctx,
+                    &request_id,
+                    ErrorCode::Internal,
+                    "webhook master key not configured",
+                )
+                .await;
             };
             secrets::seal(key, &id, &secret)?
         } else {
@@ -135,11 +175,24 @@ pub async fn handle<S: AsyncRead + AsyncWrite + Unpin>(
             revoked_at: None,
             suspended_reason: None,
         };
-        ctx.state.storage.insert_hook(&h).await?;
+        if let Err(problem) = ctx.state.storage.insert_hook(&h).await {
+            let (code, message) = if problem.to_string() == "channel webhook limit reached" {
+                (ErrorCode::RateLimited, "channel webhook limit reached")
+            } else {
+                (ErrorCode::Internal, "webhook creation failed")
+            };
+            return error(ctx, &request_id, code, message).await;
+        }
         h
     } else {
         let Some(mut h) = existing.filter(|h| h.revoked_at.is_none()) else {
-            return error(ctx, "webhook not found").await;
+            return error(
+                ctx,
+                &request_id,
+                ErrorCode::InvalidPacket,
+                "webhook not found",
+            )
+            .await;
         };
         if pid == PacketId::WebhookRevoke {
             ctx.state.storage.revoke_hook(&h.id).await?;
@@ -148,7 +201,13 @@ pub async fn handle<S: AsyncRead + AsyncWrite + Unpin>(
             secret = secrets::new_secret();
             let sealed = if h.direction == "outgoing" || h.provider == "github" {
                 let Some(key) = ctx.state.webhooks.key() else {
-                    return error(ctx, "webhook master key not configured").await;
+                    return error(
+                        ctx,
+                        &request_id,
+                        ErrorCode::Internal,
+                        "webhook master key not configured",
+                    )
+                    .await;
                 };
                 secrets::seal(key, &h.id, &secret)?
             } else {
@@ -169,18 +228,25 @@ pub async fn handle<S: AsyncRead + AsyncWrite + Unpin>(
         &to_payload(&WebhookResult {
             hook: Some(info(&hook)),
             secret,
+            request_id,
         }),
         ctx.crypto,
     )
     .await
 }
-async fn error<S: AsyncRead + AsyncWrite + Unpin>(ctx: &mut Ctx<'_, S>, msg: &str) -> Result<()> {
+async fn error<S: AsyncRead + AsyncWrite + Unpin>(
+    ctx: &mut Ctx<'_, S>,
+    request_id: &str,
+    code: ErrorCode,
+    msg: &str,
+) -> Result<()> {
     io::send_encrypted(
         ctx.stream,
-        PacketId::Error,
+        PacketId::WebhookErrorResult,
         ctx.seq,
-        &to_payload(&ErrorPayload {
-            code: ErrorCode::PermissionDenied as u32,
+        &to_payload(&WebhookErrorResult {
+            request_id: request_id.into(),
+            code: code as u32,
             message: msg.into(),
         }),
         ctx.crypto,

@@ -46,6 +46,15 @@ async fn require_perm(
     {
         return Ok(true);
     }
+    if !state
+        .storage
+        .list_user_guilds(user_id)
+        .await?
+        .iter()
+        .any(|g| g.id == guild_id)
+    {
+        return Ok(false);
+    }
     let perms = state.storage.get_user_role_perms(guild_id, user_id).await?;
     Ok(Permissions::from_role_perms(&perms).has(required))
 }

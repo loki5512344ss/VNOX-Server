@@ -16,6 +16,16 @@ pub(super) fn encrypt_with_key(
     seq: u64,
     plaintext: &[u8],
 ) -> Vec<u8> {
+    encrypt_with_aad(key, cid, seq, plaintext, &[])
+}
+
+pub(super) fn encrypt_with_aad(
+    key: &[u8; 32],
+    cid: &[u8; 8],
+    seq: u64,
+    plaintext: &[u8],
+    aad: &[u8],
+) -> Vec<u8> {
     let cipher = ChaCha20Poly1305::new(&Key::from(*key));
     let nonce_bytes = make_nonce(cid, seq);
     let nonce = Nonce::from(nonce_bytes);
@@ -24,7 +34,7 @@ pub(super) fn encrypt_with_key(
             &nonce,
             Payload {
                 msg: plaintext,
-                aad: &[],
+                aad,
             },
         )
         .expect("ChaCha20-Poly1305 encryption is infallible")
@@ -36,6 +46,16 @@ pub(super) fn decrypt_with_key(
     seq: u64,
     ciphertext: &[u8],
 ) -> anyhow::Result<Vec<u8>> {
+    decrypt_with_aad(key, cid, seq, ciphertext, &[])
+}
+
+pub(super) fn decrypt_with_aad(
+    key: &[u8; 32],
+    cid: &[u8; 8],
+    seq: u64,
+    ciphertext: &[u8],
+    aad: &[u8],
+) -> anyhow::Result<Vec<u8>> {
     let cipher = ChaCha20Poly1305::new(&Key::from(*key));
     let nonce_bytes = make_nonce(cid, seq);
     let nonce = Nonce::from(nonce_bytes);
@@ -44,7 +64,7 @@ pub(super) fn decrypt_with_key(
             &nonce,
             Payload {
                 msg: ciphertext,
-                aad: &[],
+                aad,
             },
         )
         .map_err(|e| anyhow::anyhow!("decryption failed: {e:?}"))

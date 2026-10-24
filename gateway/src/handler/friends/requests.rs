@@ -4,13 +4,10 @@ use tokio::io::{AsyncRead, AsyncWrite};
 
 use crate::{
     domain::session,
-    net::{
-        io,
-        state::{BroadcastMsg, State},
-    },
+    net::{io, state::State},
     proto::{
         FriendAcceptPayload, FriendEventPayload, FriendRequestPayload, PacketId, SessionCrypto,
-        encode_packet, to_payload,
+        to_payload,
     },
 };
 
@@ -82,12 +79,7 @@ pub async fn handle_friend_request(
         user_id: sess.user_id.clone(),
         nickname: Some(sess.nickname.clone()),
     };
-    let _ = state.broadcast.send(BroadcastMsg {
-        channel_id: None,
-        exclude_session: None,
-        target_session_id: Some(req.to_user_id.clone()),
-        data: encode_packet(PacketId::FriendRequest, *seq, &to_payload(&ev)),
-    });
+    super::notify_user(state, &req.to_user_id, &ev).await;
 
     io::send_encrypted(
         stream,
@@ -136,12 +128,7 @@ pub async fn handle_friend_accept(
         user_id: sess.user_id.clone(),
         nickname: Some(sess.nickname.clone()),
     };
-    let _ = state.broadcast.send(BroadcastMsg {
-        channel_id: None,
-        exclude_session: None,
-        target_session_id: Some(req.from_user_id.clone()),
-        data: encode_packet(PacketId::FriendAccept, *seq, &to_payload(&ev)),
-    });
+    super::notify_user(state, &req.from_user_id, &ev).await;
 
     io::send_encrypted(
         stream,

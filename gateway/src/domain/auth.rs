@@ -2,7 +2,7 @@ use anyhow::Result;
 use ed25519_dalek::{Signature, VerifyingKey};
 
 /// Verify Ed25519 signature from AUTH packet.
-pub fn verify_auth(challenge: &[u8; 32], pubkey: &[u8; 32], signature: &[u8; 64]) -> Result<()> {
+pub fn verify_auth(challenge: &[u8], pubkey: &[u8; 32], signature: &[u8; 64]) -> Result<()> {
     let key = VerifyingKey::from_bytes(pubkey).map_err(|_| anyhow::anyhow!("invalid pubkey"))?;
     let sig = Signature::from_bytes(signature);
     key.verify_strict(challenge, &sig)

@@ -13,7 +13,7 @@ pub struct SessionCrypto {
 
 impl SessionCrypto {
     pub fn derive(shared_secret: &[u8; 32], session_id: &str) -> Self {
-        let salt = b"VNOX-LNEx-KDF-v1";
+        let salt = b"VNOX-LNEx-KDF-v2";
         let hk = Hkdf::<Sha256>::new(Some(salt), shared_secret);
 
         let mut keys = [0u8; 64];
@@ -40,6 +40,22 @@ impl SessionCrypto {
 
     pub fn decrypt_c2s(&self, seq: u64, ciphertext: &[u8]) -> anyhow::Result<Vec<u8>> {
         cipher::decrypt_with_key(&self.c2s_key, &self.cid, seq, ciphertext)
+    }
+
+    #[cfg(test)]
+    pub(crate) fn encrypt_c2s_frame(&self, seq: u64, plaintext: &[u8], header: &[u8]) -> Vec<u8> {
+        cipher::encrypt_with_aad(&self.c2s_key, &self.cid, seq, plaintext, header)
+    }
+    pub fn encrypt_s2c_frame(&self, seq: u64, plaintext: &[u8], header: &[u8]) -> Vec<u8> {
+        cipher::encrypt_with_aad(&self.s2c_key, &self.cid, seq, plaintext, header)
+    }
+    pub fn decrypt_c2s_frame(
+        &self,
+        seq: u64,
+        ciphertext: &[u8],
+        header: &[u8],
+    ) -> anyhow::Result<Vec<u8>> {
+        cipher::decrypt_with_aad(&self.c2s_key, &self.cid, seq, ciphertext, header)
     }
 
     pub fn new_ephemeral() -> (EphemeralSecret, PublicKey) {

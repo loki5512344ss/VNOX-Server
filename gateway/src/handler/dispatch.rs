@@ -21,6 +21,7 @@ pub async fn dispatch<S: AsyncRead + AsyncWrite + Unpin>(
     addr: std::net::SocketAddr,
 ) -> Result<()> {
     match pid {
+        PacketId::MediaControl => crate::media::handle(ctx, session_id, payload).await?,
         PacketId::WebhookCreate
         | PacketId::WebhookList
         | PacketId::WebhookRotate

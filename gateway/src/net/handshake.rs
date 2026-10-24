@@ -10,7 +10,7 @@ use crate::{
     proto::{self, AuthPayload, HelloPayload, PacketId, SessionCrypto, SessionPayload, to_payload},
 };
 
-const LNEX_VERSION: &str = "v1";
+const LNEX_VERSION: &str = "v2";
 
 /// Run HELLO → AUTH → SESSION with X25519 ECDH key exchange.
 ///
@@ -29,20 +29,27 @@ pub async fn run(
     // HELLO — include server's ephemeral public key + privacy mode
     let challenge = auth::new_challenge();
     let private_mode = state.config.is_private();
-    let hello = HelloPayload {
+    let mut hello = HelloPayload {
         lnex_version: LNEX_VERSION.into(),
         server_pubkey: hex::decode(state.server_identity.pubkey_hex())?,
         challenge_nonce: challenge.to_vec(),
         node_name: state.config.node.name.clone(),
         server_eph_pubkey: eph_pk_raw.to_vec(),
         private_mode,
+        server_signature: Vec::new(),
     };
+    let mut hello_transcript = b"VNOX-LNEx-v2-server-hello\0".to_vec();
+    hello_transcript.extend_from_slice(&hello.encode_to_vec());
+    hello.server_signature = state.server_identity.sign(&hello_transcript);
     io::send_packet(stream, PacketId::Hello, seq, &to_payload(&hello)).await?;
     debug!("{addr} ← HELLO (eph key included)");
 
     // AUTH — receive client's ephemeral public key
     let (hdr, payload) = io::read_packet(stream).await?;
-    if PacketId::from_u16(hdr.packet_id) != Some(PacketId::Auth) {
+    if PacketId::from_u16(hdr.packet_id) != Some(PacketId::Auth)
+        || hdr.flags != 0
+        || hdr.sequence != 0
+    {
         io::send_error(
             stream,
             seq,
@@ -54,7 +61,11 @@ pub async fn run(
     }
 
     let msg = AuthPayload::decode(payload.as_slice())?;
-    debug!("{addr} → AUTH nick={}", msg.nickname);
+    anyhow::ensure!(
+        !msg.nickname.trim().is_empty() && msg.nickname.chars().count() <= 64,
+        "invalid nickname"
+    );
+    debug!("{addr} → AUTH");
 
     if msg.lnex_version != LNEX_VERSION {
         io::send_error(
@@ -70,7 +81,14 @@ pub async fn run(
     let pubkey: [u8; 32] = msg.client_pubkey.as_slice().try_into()?;
     let sig: [u8; 64] = msg.signature.as_slice().try_into()?;
 
-    if let Err(e) = auth::verify_auth(&challenge, &pubkey, &sig) {
+    let mut auth_without_signature = msg.clone();
+    auth_without_signature.signature.clear();
+    let hello_bytes = hello.encode_to_vec();
+    let mut auth_transcript = b"VNOX-LNEx-v2-client-auth\0".to_vec();
+    auth_transcript.extend_from_slice(&(hello_bytes.len() as u32).to_be_bytes());
+    auth_transcript.extend_from_slice(&hello_bytes);
+    auth_transcript.extend_from_slice(&auth_without_signature.encode_to_vec());
+    if let Err(e) = auth::verify_auth(&auth_transcript, &pubkey, &sig) {
         warn!("{addr} auth failed: {e}");
         state.metrics.inc(&state.metrics.auth_failures);
         io::send_error(
@@ -102,6 +120,7 @@ pub async fn run(
     let client_eph_raw: [u8; 32] = msg.client_eph_pubkey.as_slice().try_into()?;
     let client_eph_pk = x25519_dalek::PublicKey::from(client_eph_raw);
     let shared_secret = SessionCrypto::ecdh(eph_sk, &client_eph_pk);
+    anyhow::ensure!(shared_secret.was_contributory(), "invalid ephemeral key");
 
     // SESSION
     let sess = session::create(

@@ -2,6 +2,7 @@ pub mod admin;
 pub mod bootstrap;
 pub mod domain;
 pub mod handler;
+pub mod media;
 pub mod net;
 pub mod proto;
 pub mod webhooks;
@@ -228,7 +229,11 @@ async fn handle<S: AsyncRead + AsyncWrite + Unpin + Send + 'static>(
     state: State,
 ) -> Result<()> {
     let mut seq = 0u32;
-    let (sess, crypto) = net::handshake::run(&mut stream, addr, &state, &mut seq).await?;
+    let (sess, crypto) = tokio::time::timeout(
+        std::time::Duration::from_secs(15),
+        net::handshake::run(&mut stream, addr, &state, &mut seq),
+    )
+    .await??;
     let sid = sess.session_id.clone();
     state
         .sessions_count
@@ -293,29 +298,27 @@ async fn handle<S: AsyncRead + AsyncWrite + Unpin + Send + 'static>(
         });
     }
 
-    if let Some(ch) = session::get(&state.sessions, &sid)
-        .await
-        .and_then(|s| s.channel_id)
-    {
-        let is_voice = channels::get_channel(&state.channels, &ch)
-            .await
-            .is_some_and(|c| c.kind == channels::ChannelKind::Voice);
-
-        channels::leave(&state.channels, &ch, &sid).await;
-        handler::channel::broadcast_leave(&state, &ch, &sid).await;
-
-        if is_voice
-            && let Some(tx) = &state.voice_member_tx
-            && let Some(ref uid) = user_id
+    if let Some(sess) = session::get(&state.sessions, &sid).await {
+        for ch in [sess.channel_id, sess.voice_channel_id]
+            .into_iter()
+            .flatten()
         {
-            let event = serde_json::json!({
-                "type": "leave",
-                "channel_id": ch,
-                "user_id": uid,
-            });
-            let _ = tx.send(event.to_string());
+            let is_voice = channels::get_channel(&state.channels, &ch)
+                .await
+                .is_some_and(|c| c.kind == channels::ChannelKind::Voice);
+            channels::leave(&state.channels, &ch, &sid).await;
+            handler::channel::broadcast_leave(&state, &ch, &sid).await;
+            if is_voice
+                && let Some(tx) = &state.voice_member_tx
+                && let Some(ref uid) = user_id
+            {
+                let _ = tx.send(
+                    serde_json::json!({"type":"leave","session_id":sid,"channel_id":ch,"user_id":uid}).to_string(),
+                );
+            }
         }
     }
+    state.media.revoke(&state, &sid).await;
     session::remove(&state.sessions, &sid).await;
     state
         .sessions_count

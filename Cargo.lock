@@ -3020,6 +3020,10 @@ name = "vnox-voice-node"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "chacha20poly1305",
+ "hex",
+ "prost",
+ "prost-build",
  "serde",
  "serde_json",
  "tokio",

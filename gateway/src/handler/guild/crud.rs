@@ -75,6 +75,7 @@ pub async fn handle_guild_delete(
     crypto: &SessionCrypto,
     state: &State,
 ) -> Result<()> {
+    let guard = state.access.write().await;
     let req = crate::proto::GuildDeletePayload::decode(payload)?;
     let sess = session::get(&state.sessions, session_id)
         .await
@@ -86,6 +87,7 @@ pub async fn handle_guild_delete(
         .await?
         .ok_or_else(|| anyhow::anyhow!("guild not found"))?;
     if guild.owner_id != sess.user_id {
+        drop(guard);
         send_err(
             stream,
             seq,
@@ -97,6 +99,7 @@ pub async fn handle_guild_delete(
         return Ok(());
     }
 
+    crate::handler::channel::revoke_guild_access(state, &req.guild_id, None).await;
     state.storage.delete_guild(&req.guild_id).await?;
     state
         .storage
@@ -110,6 +113,7 @@ pub async fn handle_guild_delete(
         )
         .await?;
 
+    drop(guard);
     io::send_encrypted(
         stream,
         PacketId::GuildDelete,

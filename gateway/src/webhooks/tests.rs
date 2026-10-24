@@ -336,9 +336,10 @@ async fn lnex_management_rejects_stranger_and_creates_only_for_owner() {
         direction: "incoming".into(),
         provider: "generic".into(),
         endpoint: String::new(),
+        request_id: "request-123".into(),
     };
     for (user, expected) in [
-        ("stranger", PacketId::Error),
+        ("stranger", PacketId::WebhookErrorResult),
         ("owner", PacketId::WebhookResult),
     ] {
         let session = session::create(&s.sessions, user.into(), user.into()).await;

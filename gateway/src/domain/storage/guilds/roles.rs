@@ -64,7 +64,7 @@ impl super::super::Storage {
         match &self.pool {
             Pool::Sqlite(p) => Ok(sqlx::query_as::<_, RoleRow>(
                 "SELECT r.id,r.guild_id,r.name,r.color,r.permissions,r.position \
-                 FROM roles r JOIN member_roles mr ON r.id=mr.role_id \
+                 FROM roles r JOIN member_roles mr ON r.id=mr.role_id AND r.guild_id=mr.guild_id \
                  WHERE mr.guild_id=? AND mr.user_id=? ORDER BY r.position DESC",
             )
             .bind(guild_id)
@@ -73,7 +73,7 @@ impl super::super::Storage {
             .await?),
             Pool::Postgres(p) => Ok(sqlx::query_as::<_, RoleRow>(
                 "SELECT r.id,r.guild_id,r.name,r.color,r.permissions,r.position \
-                 FROM roles r JOIN member_roles mr ON r.id=mr.role_id \
+                 FROM roles r JOIN member_roles mr ON r.id=mr.role_id AND r.guild_id=mr.guild_id \
                  WHERE mr.guild_id=$1 AND mr.user_id=$2 ORDER BY r.position DESC",
             )
             .bind(guild_id)
@@ -92,7 +92,7 @@ impl super::super::Storage {
             Pool::Sqlite(p) => {
                 let rows: Vec<P> = sqlx::query_as::<_, P>(
                     "SELECT r.permissions FROM roles r \
-                     JOIN member_roles mr ON r.id=mr.role_id \
+                     JOIN member_roles mr ON r.id=mr.role_id AND r.guild_id=mr.guild_id \
                      WHERE mr.guild_id=? AND mr.user_id=?",
                 )
                 .bind(guild_id)
@@ -104,7 +104,7 @@ impl super::super::Storage {
             Pool::Postgres(p) => {
                 let rows: Vec<P> = sqlx::query_as::<_, P>(
                     "SELECT r.permissions FROM roles r \
-                     JOIN member_roles mr ON r.id=mr.role_id \
+                     JOIN member_roles mr ON r.id=mr.role_id AND r.guild_id=mr.guild_id \
                      WHERE mr.guild_id=$1 AND mr.user_id=$2",
                 )
                 .bind(guild_id)

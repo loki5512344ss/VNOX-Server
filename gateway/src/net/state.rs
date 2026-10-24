@@ -15,6 +15,8 @@ pub type VoiceMemberTx = tokio::sync::broadcast::Sender<String>;
 
 #[derive(Clone)]
 pub struct State {
+    pub access: Arc<tokio::sync::RwLock<()>>,
+    pub media: Arc<crate::media::Runtime>,
     pub webhooks: Arc<crate::webhooks::Runtime>,
     pub sessions: SessionStore,
     pub channels: ChannelStore,
@@ -57,6 +59,8 @@ impl State {
         let burst = config.gateway.message_rate_burst.unwrap_or(10);
         let rate_limiter = Arc::new(RateLimiter::new(rate_per_sec, burst));
         Self {
+            access: Arc::default(),
+            media: Arc::default(),
             webhooks: Arc::default(),
             sessions,
             channels,

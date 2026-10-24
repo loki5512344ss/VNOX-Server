@@ -1,3 +1,7 @@
+pub mod secure;
+pub mod wire {
+    include!(concat!(env!("OUT_DIR"), "/lnex.rs"));
+}
 pub mod jitter;
 pub mod relay;
 pub mod runner;

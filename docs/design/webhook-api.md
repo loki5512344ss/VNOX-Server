@@ -1,12 +1,14 @@
 # Community webhook API v1
 
-Additive LNEx packets `0x0200..0x0205` manage channel-scoped integrations over an already authenticated encrypted session. `MANAGE_WEBHOOKS` is permission bit11. Management requires a persisted text channel in a guild, actual current membership, and the permission (or guild ownership). The operational HTTP listener never exposes management APIs.
+Additive LNEx packets `0x0200..0x0206` manage channel-scoped integrations over an already authenticated encrypted session. `MANAGE_WEBHOOKS` is permission bit11. Management requires a persisted text channel in a guild, actual current membership, and the permission (or guild ownership). The operational HTTP listener never exposes management APIs.
 
 - `WebhookCreate`: channel_id, name, direction (`incoming`/`outgoing`), provider (`generic`/`github`), endpoint for outgoing.
 - `WebhookList`: channel_id; returns descriptors without secrets.
 - `WebhookRotate`/`WebhookRevoke`: id; authorization is rechecked against its channel.
 - `WebhookResult`: descriptor plus new secret only for create/rotate.
 - `WebhookListResult`: descriptors. Descriptors include suspension state. All management requests use the additive `WebhookRequest` message; the packet identifies the operation.
+
+Requests carry a unique request_id (up to 64 ASCII alphanumeric/hyphen characters), echoed in both success responses and dedicated `WebhookErrorResult` packet `0x0206`. Clients discard stale/unknown replies, including one-time secrets, and refresh after a timeout because a mutation may already have committed.
 
 Only incoming delivery is public HTTP: `POST /v1/webhooks/{webhook_id}`. Generic integrations use `Authorization: Bearer <secret>` and JSON `{ "content": "..." }`; unknown identity/avatar/mention fields are rejected. Optional `Idempotency-Key` deduplicates retries. GitHub adapters verify `X-Hub-Signature-256` over raw bytes and use `X-GitHub-Delivery` for deduplication. GitHub initially supports push, pull_request, issues, release and ping summaries. Delivery body is capped64KiB, content4000characters; mass mention syntax is denied. A webhook sender has a reserved `webhook:<id>` identity, never a user-provided sender ID. Production publishing requires HTTPS proxying; bearer tokens must not appear in URLs or access logs.
 

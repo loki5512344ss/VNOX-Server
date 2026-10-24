@@ -35,7 +35,7 @@ pub async fn handle_reaction_add(
 
     let _ = state.broadcast.send(BroadcastMsg {
         channel_id: Some(payload.channel_id.clone()),
-        exclude_session: Some(session_id.into()),
+        exclude_session: None,
         target_session_id: None,
         data: encode_packet(PacketId::MessageReactionAdd, 0, &to_payload(&payload)),
     });
@@ -79,7 +79,7 @@ pub async fn handle_reaction_remove(
 
     let _ = state.broadcast.send(BroadcastMsg {
         channel_id: Some(payload.channel_id.clone()),
-        exclude_session: Some(session_id.into()),
+        exclude_session: None,
         target_session_id: None,
         data: encode_packet(PacketId::MessageReactionRemove, 0, &to_payload(&payload)),
     });

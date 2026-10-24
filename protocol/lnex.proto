@@ -10,6 +10,7 @@ message Hello {
   string node_name        = 4;
   bytes  server_eph_pubkey = 5;
   bool   private_mode     = 6;
+  bytes server_signature = 7;
 }
 
 message Auth {
@@ -402,6 +403,7 @@ message WebhookRequest {
   string direction = 4; // incoming | outgoing
   string provider = 5; // generic | github (incoming only)
   string endpoint = 6; // outgoing HTTPS URL
+  string request_id = 7;
 }
 message WebhookInfo {
   string id = 1;
@@ -414,5 +416,46 @@ message WebhookInfo {
   bool revoked = 8;
   string suspended_reason = 9;
 }
-message WebhookResult { WebhookInfo hook = 1; string secret = 2; }
-message WebhookListResult { repeated WebhookInfo hooks = 1; }
+message WebhookResult { WebhookInfo hook = 1; string secret = 2; string request_id = 3; }
+message WebhookListResult { repeated WebhookInfo hooks = 1; string request_id = 2; }
+message WebhookErrorResult { string request_id = 1; uint32 code = 2; string message = 3; }
+
+// Authenticated signalling only; media uses DTLS/SRTP peer connections.
+message MediaControl {
+  uint32 action = 1; // START1 STOP2 WATCH3 UNWATCH4 OFFER5 ANSWER6 ICE7
+  string channel_id = 2;
+  string share_id = 3;
+  string target_session_id = 4;
+  string body = 5;
+  uint32 mline_index = 6;
+  bool application_audio = 7;
+  bool microphone = 8;
+}
+message MediaEvent {
+  uint32 action = 1;
+  string channel_id = 2;
+  string share_id = 3;
+  string target_session_id = 4;
+  string body = 5;
+  uint32 mline_index = 6;
+  bool application_audio = 7;
+  bool microphone = 8;
+  string sender_session_id = 9;
+  string publisher_user_id = 10;
+}
+
+// Fresh credentials delivered only over the authenticated encrypted control session.
+message VoiceSession {
+  bytes route_id = 1;
+  bytes c2s_key = 2;
+  bytes s2c_key = 3;
+  string channel_id = 4;
+}
+message VoiceFrame {
+  uint32 voice_seq = 1;
+  uint32 timestamp = 2;
+  string channel_id = 3;
+  string sender_session_id = 4;
+  bytes opus = 5;
+  string sender_user_id = 6;
+}

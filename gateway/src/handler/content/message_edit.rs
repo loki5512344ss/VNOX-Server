@@ -48,7 +48,7 @@ pub async fn handle_message_edit(session_id: &str, payload: &[u8], state: &State
 
     let _ = state.broadcast.send(BroadcastMsg {
         channel_id: Some(edit.channel_id.clone()),
-        exclude_session: Some(session_id.into()),
+        exclude_session: None,
         target_session_id: None,
         data: encode_packet(PacketId::MessageEdit, 0, &to_payload(&broadcast_msg)),
     });
@@ -81,7 +81,7 @@ pub async fn handle_message_delete(session_id: &str, payload: &[u8], state: &Sta
 
     let _ = state.broadcast.send(BroadcastMsg {
         channel_id: Some(delete.channel_id.clone()),
-        exclude_session: Some(session_id.into()),
+        exclude_session: None,
         target_session_id: None,
         data: encode_packet(PacketId::MessageDelete, 0, &to_payload(&delete)),
     });

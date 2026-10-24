@@ -1,6 +1,9 @@
 #[repr(u16)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PacketId {
+    WebhookErrorResult = 0x0206,
+    MediaControl = 0x0180,
+    MediaEvent = 0x0181,
     WebhookCreate = 0x0200,
     WebhookList = 0x0201,
     WebhookRotate = 0x0202,
@@ -12,6 +15,7 @@ pub enum PacketId {
     Session = 0x0003,
     Ping = 0x0004,
     Pong = 0x0005,
+    VoiceSession = 0x0012,
     VoicePacket = 0x0010,
     VoiceState = 0x0011,
     ChatMessage = 0x0020,
@@ -65,6 +69,7 @@ pub enum PacketId {
     PresenceUpdate = 0x0140,
     PresenceSync = 0x0141,
     PresenceEvent = 0x0142,
+    FriendEvent = 0x0158,
     FriendRequest = 0x0150,
     FriendAccept = 0x0151,
     FriendDecline = 0x0152,
@@ -80,6 +85,9 @@ pub enum PacketId {
 impl PacketId {
     pub fn from_u16(v: u16) -> Option<Self> {
         match v {
+            0x0206 => Some(Self::WebhookErrorResult),
+            0x0180 => Some(Self::MediaControl),
+            0x0181 => Some(Self::MediaEvent),
             0x0200 => Some(Self::WebhookCreate),
             0x0201 => Some(Self::WebhookList),
             0x0202 => Some(Self::WebhookRotate),
@@ -91,6 +99,7 @@ impl PacketId {
             0x0003 => Some(Self::Session),
             0x0004 => Some(Self::Ping),
             0x0005 => Some(Self::Pong),
+            0x0012 => Some(Self::VoiceSession),
             0x0010 => Some(Self::VoicePacket),
             0x0011 => Some(Self::VoiceState),
             0x0020 => Some(Self::ChatMessage),
@@ -144,6 +153,7 @@ impl PacketId {
             0x0140 => Some(Self::PresenceUpdate),
             0x0141 => Some(Self::PresenceSync),
             0x0142 => Some(Self::PresenceEvent),
+            0x0158 => Some(Self::FriendEvent),
             0x0150 => Some(Self::FriendRequest),
             0x0151 => Some(Self::FriendAccept),
             0x0152 => Some(Self::FriendDecline),

@@ -29,7 +29,24 @@ pub async fn handle_member_list_fetch(
         None => return Ok(()),
     };
 
-    // Optional: verify the requester is a member of the guild.
+    if !state
+        .storage
+        .list_user_guilds(&sess.user_id)
+        .await?
+        .iter()
+        .any(|g| g.id == req.guild_id)
+    {
+        send_err(
+            stream,
+            seq,
+            crate::proto::ErrorCode::PermissionDenied,
+            "guild membership required",
+            crypto,
+        )
+        .await?;
+        return Ok(());
+    }
+    // Membership is checked before listing identities.
     let owner_id = state
         .storage
         .get_guild(&req.guild_id)
@@ -79,6 +96,7 @@ pub async fn handle_role_assign(
         None => return Ok(()),
     };
 
+    let access = state.access.write().await;
     if !require_perm(
         state,
         &req.guild_id,
@@ -87,6 +105,7 @@ pub async fn handle_role_assign(
     )
     .await?
     {
+        drop(access);
         send_err(
             stream,
             seq,
@@ -98,6 +117,31 @@ pub async fn handle_role_assign(
         return Ok(());
     }
 
+    let role = super::roles::role_permissions(state, &req.guild_id, &req.role_id).await?;
+    if !state
+        .storage
+        .list_user_guilds(&req.user_id)
+        .await?
+        .iter()
+        .any(|g| g.id == req.guild_id)
+        || match role {
+            Some(permissions) => {
+                !super::roles::may_grant(state, &req.guild_id, &sess.user_id, permissions).await?
+            }
+            None => true,
+        }
+    {
+        drop(access);
+        send_err(
+            stream,
+            seq,
+            crate::proto::ErrorCode::PermissionDenied,
+            "role or target not permitted in this guild",
+            crypto,
+        )
+        .await?;
+        return Ok(());
+    }
     state
         .storage
         .assign_role(&req.guild_id, &req.user_id, &req.role_id)
@@ -114,6 +158,7 @@ pub async fn handle_role_assign(
         )
         .await?;
 
+    drop(access);
     // Confirm to caller.
     io::send_encrypted(
         stream,
@@ -145,6 +190,7 @@ pub async fn handle_role_unassign(
         None => return Ok(()),
     };
 
+    let access = state.access.write().await;
     if !require_perm(
         state,
         &req.guild_id,
@@ -153,6 +199,7 @@ pub async fn handle_role_unassign(
     )
     .await?
     {
+        drop(access);
         send_err(
             stream,
             seq,
@@ -164,9 +211,36 @@ pub async fn handle_role_unassign(
         return Ok(());
     }
 
+    let role = super::roles::role_permissions(state, &req.guild_id, &req.role_id).await?;
+    if !state
+        .storage
+        .list_user_guilds(&req.user_id)
+        .await?
+        .iter()
+        .any(|g| g.id == req.guild_id)
+        || match role {
+            Some(permissions) => {
+                !super::roles::may_grant(state, &req.guild_id, &sess.user_id, permissions).await?
+            }
+            None => true,
+        }
+    {
+        drop(access);
+        send_err(
+            stream,
+            seq,
+            crate::proto::ErrorCode::PermissionDenied,
+            "role or target not permitted in this guild",
+            crypto,
+        )
+        .await?;
+        return Ok(());
+    }
     state
         .storage
         .remove_role_from_user(&req.guild_id, &req.user_id, &req.role_id)
+        .await?;
+    crate::handler::channel::recheck_voice_permissions(state, &req.guild_id, Some(&req.user_id))
         .await?;
     state
         .storage
@@ -180,6 +254,7 @@ pub async fn handle_role_unassign(
         )
         .await?;
 
+    drop(access);
     io::send_encrypted(
         stream,
         PacketId::GuildRoleUnassign,
@@ -205,7 +280,26 @@ pub async fn handle_role_list_fetch(
     state: &State,
 ) -> Result<()> {
     let req = GuildRoleListFetchPayload::decode(payload)?;
-    let _sess = session::get(&state.sessions, session_id).await;
+    let Some(sess) = session::get(&state.sessions, session_id).await else {
+        return Ok(());
+    };
+    if !state
+        .storage
+        .list_user_guilds(&sess.user_id)
+        .await?
+        .iter()
+        .any(|g| g.id == req.guild_id)
+    {
+        send_err(
+            stream,
+            seq,
+            crate::proto::ErrorCode::PermissionDenied,
+            "guild membership required",
+            crypto,
+        )
+        .await?;
+        return Ok(());
+    }
 
     let rows = state.storage.list_guild_roles(&req.guild_id).await?;
     let roles: Vec<GuildRoleInfoPayload> = rows

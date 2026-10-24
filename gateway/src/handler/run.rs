@@ -25,9 +25,10 @@ pub async fn run_session<S: AsyncRead + AsyncWrite + Unpin>(
         crypto,
         state,
     };
+    let mut reader = io::EncryptedReader::default();
     loop {
         tokio::select! {
-            result = io::read_encrypted(ctx.stream, ctx.crypto) => {
+            result = reader.read(ctx.stream, ctx.crypto) => {
                 let (hdr, payload) = result?;
                 let pid = match PacketId::from_u16(hdr.packet_id) {
                     Some(p) => p,
