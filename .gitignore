@@ -2,3 +2,8 @@ target/
 dev/data/
 *.db
 .DS_Store
+
+# Local credentials must stay outside Git.
+.env
+.env.*
+!.env.example
