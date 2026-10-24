@@ -98,7 +98,7 @@ pub fn render(content: &Content<'_>) -> String {
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" bgcolor="#101011"><tr><td align="center" style="padding:32px 12px">
 <table role="presentation" width="600" cellpadding="0" cellspacing="0" border="0" bgcolor="#1c1c1e" style="width:100%;max-width:600px;border:1px solid #383634;border-radius:18px;overflow:hidden;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif">
 <tr><td bgcolor="#38312a" style="background:#38312a;background-image:linear-gradient(125deg,#514033 0%,#39312c 55%,#242426 100%);padding:30px 32px 32px">
-<table role="presentation" cellpadding="0" cellspacing="0" border="0"><tr><td width="42" height="42" align="center" bgcolor="#151516" style="border-radius:11px;color:#e8d5b8;font-size:19px;font-weight:800"><img src="{origin}/assets/vnox-mark.png" width="42" height="42" alt="V" style="display:block;border:0;border-radius:11px"></td><td style="padding-left:12px;color:#f6f0e7;font-size:23px;font-weight:700">Vnox</td></tr></table>
+<table role="presentation" cellpadding="0" cellspacing="0" border="0"><tr><td width="42" height="42" align="center" bgcolor="#151516" style="border-radius:11px;color:#e8d5b8;font-size:19px;font-weight:800"><img src="{origin}/assets/vnox-mark-email.png" width="42" height="42" alt="V" style="display:block;border:0;border-radius:11px"></td><td style="padding-left:12px;color:#f6f0e7;font-size:23px;font-weight:700">Vnox</td></tr></table>
 <p style="margin:25px 0 10px;color:#d1b998;font-size:12px">{tagline}</p>
 <h1 style="margin:0;color:#fff9ef;font-size:28px;line-height:35px;font-weight:700">{title}</h1>
 </td></tr><tr><td style="padding:32px 32px 12px">{paragraphs}{code}{link}

@@ -258,7 +258,9 @@ async fn full_flow_creates_neutral_account_and_session() {
         {
             assert_eq!(url, ORIGIN);
         }
-        assert!(!html.contains(&format!("{ORIGIN}/")) || html.contains("/assets/vnox-mark.png"));
+        assert!(
+            !html.contains(&format!("{ORIGIN}/")) || html.contains("/assets/vnox-mark-email.png")
+        );
     }
     // Only keyed MACs are stored.
     let row: (String, String) = sqlx::query_as("SELECT email_mac,code_mac FROM email_attempts")
