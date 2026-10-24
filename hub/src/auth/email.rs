@@ -48,6 +48,10 @@ pub struct EmailLimits {
     pub per_address_hour: i64,
     pub per_source_hour: i64,
     pub global_hour: i64,
+    /// Extra global budget usable only by resends from a browser that already holds a
+    /// live attempt, so exhausting `global_hour` with fresh starts cannot lock out people
+    /// who are mid sign-in.
+    pub global_resend_reserve: i64,
 }
 
 impl Default for EmailLimits {
@@ -57,6 +61,7 @@ impl Default for EmailLimits {
             per_address_hour: 5,
             per_source_hour: 10,
             global_hour: 300,
+            global_resend_reserve: 100,
         }
     }
 }
@@ -108,9 +113,16 @@ impl EmailAuth {
         pool: &SqlitePool,
         email_mac: &str,
         source_mac: &str,
+        resend: bool,
     ) -> anyhow::Result<bool> {
         let t = now();
         let limits = self.limits;
+        let global_limit = limits.global_hour
+            + if resend {
+                limits.global_resend_reserve
+            } else {
+                0
+            };
         let result = sqlx::query(
             "INSERT INTO email_send_log(email_mac,source_mac,sent_at) SELECT ?,?,? WHERE \
              (SELECT COUNT(*) FROM email_send_log WHERE email_mac=? AND sent_at>?)=0 AND \
@@ -130,10 +142,22 @@ impl EmailAuth {
         .bind(t - 3600)
         .bind(limits.per_source_hour)
         .bind(t - 3600)
-        .bind(limits.global_hour)
+        .bind(global_limit)
         .execute(pool)
         .await?;
         Ok(result.rows_affected() == 1)
+    }
+
+    /// True when this browser cookie maps to an unexpired pending attempt.
+    pub async fn has_pending(&self, pool: &SqlitePool, browser: &str) -> anyhow::Result<bool> {
+        let found: Option<i64> = sqlx::query_scalar(
+            "SELECT 1 FROM email_attempts WHERE browser_hash=? AND expires_at>?",
+        )
+        .bind(hash(browser))
+        .bind(now())
+        .fetch_optional(pool)
+        .await?;
+        Ok(found.is_some())
     }
 
     /// Stores a new pending attempt, replacing the one bound to the browser's previous

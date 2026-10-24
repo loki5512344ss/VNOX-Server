@@ -49,7 +49,7 @@ Eight digits from the OS CSPRNG with rejection sampling, valid for ten minutes, 
 
 ### Rate limits (SQLite ledger of MACs, atomic check-and-record)
 
-Per address 1 per 60 s and 5 per hour; per source (`X-Forwarded-For`, as GitHub login) 10 per hour; globally 300 per hour. Budget is spent when a request passes validation, even if delivery later fails. The in-memory per-IP limiter used by GitHub (20 per minute, 300 global) also applies to both endpoints. At most 4096 attempts are pending.
+Per address 1 per 60 s and 5 per hour; per source (`X-Forwarded-For`, as GitHub login) 10 per hour, where IPv6 sources are grouped by /64 and IPv4-mapped IPv6 counts as IPv4 (so rotating host bits does not dodge the limit; an attacker with a larger prefix or many networks still can); globally 300 per hour for new sign-ins plus a separate reserve of 100 per hour that only resends can spend, meaning requests carrying the `__Host-vnox_email` cookie of a still-live pending attempt. Flooding the general budget therefore cannot cut off people who are already mid sign-in. It does not protect people who start after the budget is exhausted, and an attacker who first collects live attempts can spend the reserve too (bounded by the per-address and per-source limits). Budget is spent when a request passes validation, even if delivery later fails. The in-memory per-IP limiter used by GitHub (20 per minute, 300 global) also applies to both endpoints. At most 4096 attempts are pending.
 
 ### Address handling and accounts
 

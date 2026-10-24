@@ -115,6 +115,7 @@ fn relaxed() -> EmailLimits {
         per_address_hour: 1000,
         per_source_hour: 1000,
         global_hour: 1000,
+        global_resend_reserve: 0,
     }
 }
 
@@ -651,6 +652,7 @@ async fn source_and_global_limits() {
             per_address_hour: 100,
             per_source_hour: 3,
             global_hour: 5,
+            global_resend_reserve: 0,
         },
         false,
         true,
@@ -818,4 +820,93 @@ async fn expired_attempts_and_old_ledger_rows_are_pruned() {
             .unwrap();
         assert_eq!(n, 0, "{sql}");
     }
+}
+
+#[tokio::test]
+async fn ipv6_sources_are_limited_per_slash_64() {
+    let h = harness_with(
+        EmailLimits {
+            address_cooldown: 0,
+            per_address_hour: 100,
+            per_source_hour: 2,
+            global_hour: 100,
+            global_resend_reserve: 0,
+        },
+        false,
+        true,
+    )
+    .await;
+    let go = |i: usize, ip: &'static str| {
+        let app = h.app.clone();
+        async move {
+            let mut request = post(
+                "/v1/auth/email/start",
+                json!({"email": format!("v6user{i}@example.com")}),
+            );
+            request.ip = ip;
+            send(&app, request.request()).await.0
+        }
+    };
+    assert_eq!(go(0, "2001:db8:1:2::1").await, StatusCode::ACCEPTED);
+    assert_eq!(
+        go(1, "2001:db8:1:2:ffff:aaaa:bbbb:cccc").await,
+        StatusCode::ACCEPTED
+    );
+    assert_eq!(
+        go(2, "2001:db8:1:2:1234::9").await,
+        StatusCode::TOO_MANY_REQUESTS
+    );
+    // A different /64 has its own budget; mapped IPv4 shares the IPv4 bucket.
+    assert_eq!(go(3, "2001:db8:1:3::1").await, StatusCode::ACCEPTED);
+    assert_eq!(go(4, "::ffff:192.0.2.9").await, StatusCode::ACCEPTED);
+    assert_eq!(go(5, "192.0.2.9").await, StatusCode::ACCEPTED);
+    assert_eq!(
+        go(6, "::ffff:192.0.2.9").await,
+        StatusCode::TOO_MANY_REQUESTS
+    );
+}
+
+#[tokio::test]
+async fn global_reserve_serves_only_resends_from_a_live_attempt() {
+    let h = harness_with(
+        EmailLimits {
+            address_cooldown: 0,
+            per_address_hour: 100,
+            per_source_hour: 100,
+            global_hour: 2,
+            global_resend_reserve: 2,
+        },
+        false,
+        true,
+    )
+    .await;
+    let browser = start(&h, "a@example.com").await;
+    start(&h, "b@example.com").await;
+    // Fresh starts are now refused, including with a bogus or missing browser cookie.
+    let fresh = post("/v1/auth/email/start", json!({"email": "c@example.com"}));
+    assert_eq!(
+        send(&h.app, fresh.request()).await.0,
+        StatusCode::TOO_MANY_REQUESTS
+    );
+    let mut bogus = post("/v1/auth/email/start", json!({"email": "c@example.com"}));
+    let stranger = format!("__Host-vnox_email={}", "cd".repeat(32));
+    bogus.cookie = Some(&stranger);
+    assert_eq!(
+        send(&h.app, bogus.request()).await.0,
+        StatusCode::TOO_MANY_REQUESTS
+    );
+    // A browser mid sign-in can still resend from the reserve, until it is used up.
+    let mut resend = post("/v1/auth/email/start", json!({"email": "a@example.com"}));
+    resend.cookie = Some(&browser);
+    let (status, cookies, _) = send(&h.app, resend.request()).await;
+    assert_eq!(status, StatusCode::ACCEPTED);
+    let browser = pair(&cookies, "__Host-vnox_email");
+    let mut resend = post("/v1/auth/email/start", json!({"email": "a@example.com"}));
+    resend.cookie = Some(&browser);
+    assert_eq!(send(&h.app, resend.request()).await.0, StatusCode::ACCEPTED);
+    let mut resend = post("/v1/auth/email/start", json!({"email": "a@example.com"}));
+    resend.cookie = Some(&browser);
+    let (status, cookies, _) = send(&h.app, resend.request()).await;
+    assert_eq!(status, StatusCode::TOO_MANY_REQUESTS);
+    assert!(cookies.is_empty());
 }

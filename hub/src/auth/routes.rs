@@ -75,12 +75,25 @@ fn set_cookie(response: &mut Response, name: &'static str, value: String, ttl: i
 }
 fn client_ip(headers: &HeaderMap) -> String {
     // The loopback-only service trusts only the reverse proxy, which overwrites this header.
-    headers
+    // IPv6 sources are grouped by /64 (one subscriber's usual allocation or smaller), and
+    // IPv4-mapped addresses count as IPv4, so rotating host bits cannot dodge per-source limits.
+    use std::net::IpAddr;
+    match headers
         .get("x-forwarded-for")
         .and_then(|v| v.to_str().ok())
-        .and_then(|v| v.parse::<std::net::IpAddr>().ok())
-        .map(|v| v.to_string())
-        .unwrap_or_else(|| "local".into())
+        .and_then(|v| v.parse::<IpAddr>().ok())
+    {
+        Some(IpAddr::V6(v6)) => match v6.to_ipv4_mapped() {
+            Some(v4) => v4.to_string(),
+            None => {
+                let mut octets = v6.octets();
+                octets[8..].fill(0);
+                format!("{}/64", std::net::Ipv6Addr::from(octets))
+            }
+        },
+        Some(v4) => v4.to_string(),
+        None => "local".into(),
+    }
 }
 fn allowed(auth: &AuthService, headers: &HeaderMap) -> bool {
     auth.allow(&client_ip(headers))
@@ -206,8 +219,13 @@ async fn email_start(
     };
     let lang = Lang::from_tag(body.lang.as_deref());
     let source = mail.source_mac(&client_ip(&headers));
+    let previous = cookie(&headers, EMAIL_BROWSER);
+    let resend = match &previous {
+        Some(browser) => mail.has_pending(&auth.pool, browser).await.unwrap_or(false),
+        None => false,
+    };
     let reserved = mail
-        .reserve_send(&auth.pool, &mail.email_mac(&address), &source)
+        .reserve_send(&auth.pool, &mail.email_mac(&address), &source, resend)
         .await;
     match reserved {
         Ok(true) => {}
@@ -217,7 +235,6 @@ async fn email_start(
     // Housekeeping failures must not block sign-in; expiry is enforced on every read.
     let _ = store::cleanup(&auth.pool).await;
     let browser = store::token();
-    let previous = cookie(&headers, EMAIL_BROWSER);
     let Ok((attempt_id, code)) = mail
         .create_attempt(&auth.pool, &address, &browser, previous.as_deref())
         .await
