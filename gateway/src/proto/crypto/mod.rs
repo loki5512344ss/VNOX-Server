@@ -43,7 +43,7 @@ impl SessionCrypto {
     }
 
     pub fn new_ephemeral() -> (EphemeralSecret, PublicKey) {
-        let mut rng = rand::thread_rng();
+        let mut rng = rand::rng();
         let sk = EphemeralSecret::random_from_rng(&mut rng);
         let pk = PublicKey::from(&sk);
         (sk, pk)
@@ -96,7 +96,7 @@ mod tests {
 
     #[test]
     fn ecdh_derives_same_secret_on_both_sides() {
-        let mut rng = rand::thread_rng();
+        let mut rng = rand::rng();
 
         let alice_sk = EphemeralSecret::random_from_rng(&mut rng);
         let alice_pk = PublicKey::from(&alice_sk);

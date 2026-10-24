@@ -5,7 +5,7 @@
 **Not Discord. Not TeamSpeak. Not someone else's cloud.**
 
 [![License: GPL-3.0](https://img.shields.io/badge/license-GPL--3.0-blue.svg)](LICENSE)
-[![Rust](https://img.shields.io/badge/rust-1.85%2B-orange.svg)](https://www.rust-lang.org/)
+[![Rust](https://img.shields.io/badge/rust-1.94%2B-orange.svg)](https://www.rust-lang.org/)
 [![Status: Phase 1](https://img.shields.io/badge/status-phase%201%20%E2%80%94%20implemented-yellow.svg)](docs/00-status.md)
 
 ---
@@ -117,7 +117,7 @@ See [docs/00-status.md](docs/00-status.md) for a full breakdown.
 
 ## Quick start
 
-**Requirements:** Rust 1.85+, a running [VNOX Client](../VNOX-Client/)
+**Requirements:** Rust 1.94+, a running [VNOX Client](../VNOX-Client/)
 
 ```bash
 # Terminal 1 — gateway
@@ -135,9 +135,10 @@ The client connects to `127.0.0.1:7600` by default. Config reference: [dev/READM
 docker-compose up
 ```
 
-### Opus on Windows
+### Build dependencies
 
-`audiopus_sys` builds libopus from source via CMake. CMake 4.x policy flag is already set in `.cargo/config.toml` — no manual steps needed.
+Gateway builds require `protoc` (for example, `protobuf-compiler` on Ubuntu).
+The voice relay forwards encoded packets and does not require libopus; the codec is a client dependency.
 
 ---
 

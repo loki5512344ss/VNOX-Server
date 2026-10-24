@@ -11,9 +11,9 @@ pub fn verify_auth(challenge: &[u8; 32], pubkey: &[u8; 32], signature: &[u8; 64]
 
 /// Random 32-byte challenge nonce for HELLO.
 pub fn new_challenge() -> [u8; 32] {
-    use rand::RngCore;
+    use rand::Rng;
     let mut n = [0u8; 32];
-    rand::thread_rng().fill_bytes(&mut n);
+    rand::rng().fill_bytes(&mut n);
     n
 }
 
@@ -21,11 +21,10 @@ pub fn new_challenge() -> [u8; 32] {
 mod tests {
     use super::*;
     use ed25519_dalek::{Signer, SigningKey};
-    use rand::rngs::OsRng;
 
     #[test]
     fn verify_auth_accepts_valid_signature() {
-        let sk = SigningKey::generate(&mut OsRng);
+        let sk = SigningKey::generate(&mut rand::rng());
         let vk = sk.verifying_key();
         let challenge = [7u8; 32];
         let sig = sk.sign(&challenge);
@@ -34,7 +33,7 @@ mod tests {
 
     #[test]
     fn verify_auth_rejects_tampered_challenge() {
-        let sk = SigningKey::generate(&mut OsRng);
+        let sk = SigningKey::generate(&mut rand::rng());
         let vk = sk.verifying_key();
         let challenge = [7u8; 32];
         let sig = sk.sign(&challenge);

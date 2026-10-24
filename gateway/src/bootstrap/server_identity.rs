@@ -1,6 +1,5 @@
 use anyhow::Result;
 use ed25519_dalek::SigningKey;
-use rand::rngs::OsRng;
 use serde::{Deserialize, Serialize};
 use std::path::Path;
 
@@ -41,7 +40,7 @@ impl ServerIdentity {
             return Ok(Self { signing_key });
         }
 
-        let signing_key = SigningKey::generate(&mut OsRng);
+        let signing_key = SigningKey::generate(&mut rand::rng());
         let verifying_key = signing_key.verifying_key();
         let pubkey_hex = hex::encode(verifying_key.to_bytes());
 

@@ -98,14 +98,26 @@ pub async fn handle_channel_create(
 
     let guild_id = req.guild_id.clone();
 
-    let created = channels::create(&state.channels, &channel_id, &channel_name, kind.clone(), guild_id.clone()).await;
+    let created = channels::create(
+        &state.channels,
+        &channel_id,
+        &channel_name,
+        kind.clone(),
+        guild_id.clone(),
+    )
+    .await;
 
     // Persist to DB (best-effort, log and continue on failure).
     #[allow(clippy::collapsible_if)]
     if created {
         if let Err(e) = state
             .storage
-            .create_channel(&channel_id, &channel_name, kind.as_str(), guild_id.as_deref())
+            .create_channel(
+                &channel_id,
+                &channel_name,
+                kind.as_str(),
+                guild_id.as_deref(),
+            )
             .await
         {
             warn!("failed to persist channel to storage: {e}");

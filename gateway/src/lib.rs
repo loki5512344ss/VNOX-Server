@@ -150,7 +150,9 @@ async fn run_tls(
         match listener.accept().await {
             Ok((stream, addr)) => {
                 let current = conn_count.load(std::sync::atomic::Ordering::Relaxed);
-                if let Some(limit) = max_connections && current >= limit {
+                if let Some(limit) = max_connections
+                    && current >= limit
+                {
                     warn!("connection rejected from {addr}: at max_connections ({limit})");
                     drop(stream);
                     continue;
@@ -188,7 +190,9 @@ async fn run_plain(
         match listener.accept().await {
             Ok((stream, addr)) => {
                 let current = conn_count.load(std::sync::atomic::Ordering::Relaxed);
-                if let Some(limit) = max_connections && current >= limit {
+                if let Some(limit) = max_connections
+                    && current >= limit
+                {
                     warn!("connection rejected from {addr}: at max_connections ({limit})");
                     drop(stream);
                     continue;
@@ -335,7 +339,7 @@ fn load_or_generate_tls_certs(
             let certified_key = rcgen::generate_simple_self_signed(vec!["VNOX Server".into()])?;
             let cert_der = certified_key.cert.der().clone();
             let key_der = PrivateKeyDer::from(PrivatePkcs8KeyDer::from(
-                certified_key.key_pair.serialize_der(),
+                certified_key.signing_key.serialize_der(),
             ));
             Ok((vec![cert_der], key_der))
         }

@@ -1,15 +1,15 @@
 # ─── Stage 1: Build ───────────────────────────────────────────────────────────
-FROM rust:1.85-slim-bookworm AS builder
+FROM rust:1.99-slim-bookworm AS builder
 
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
-        pkg-config libssl-dev libopus-dev cmake && \
+        pkg-config cmake protobuf-compiler && \
     rm -rf /var/lib/apt/lists/*
 
 WORKDIR /build
 COPY . .
 
-RUN cargo build --release --package vnox-voice-node
+RUN cargo build --locked --release --package vnox-voice-node
 
 # ─── Stage 2: Runtime ─────────────────────────────────────────────────────────
 FROM debian:bookworm-slim

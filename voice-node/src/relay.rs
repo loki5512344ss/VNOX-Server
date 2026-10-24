@@ -7,14 +7,12 @@ use tokio::net::UdpSocket;
 use tokio::sync::RwLock;
 use tracing::debug;
 
-/// Per-channel state: members, jitter buffer, and sender tracking.
+/// Per-channel membership and independent jitter buffers for each sender.
 pub struct ChannelState {
     /// member address → last packet time
     pub members: HashMap<SocketAddr, Instant>,
-    /// reorders and smooths voice packets
-    pub jitter: JitterBuffer,
-    /// voice_seq → original sender address (for relay after pop)
-    pub senders: HashMap<u32, SocketAddr>,
+    /// Sender address → jitter buffer; sequence numbers are local to each sender.
+    pub streams: HashMap<SocketAddr, JitterBuffer>,
 }
 
 /// Maps channel_id → per-channel state.
@@ -30,6 +28,9 @@ pub async fn cleanup_stale(channels: &ChannelMap, max_idle: Duration) {
     let mut lock = channels.write().await;
     lock.retain(|_, state| {
         state.members.retain(|_, last_seen| *last_seen >= cutoff);
+        state
+            .streams
+            .retain(|sender, _| state.members.contains_key(sender));
         !state.members.is_empty()
     });
 }
@@ -54,27 +55,27 @@ pub async fn push_packet(
     let mut lock = channels.write().await;
     let state = lock.entry(channel_id).or_insert_with(|| ChannelState {
         members: HashMap::new(),
-        jitter: JitterBuffer::new(40, true),
-        senders: HashMap::new(),
+        streams: HashMap::new(),
     });
-    state.jitter.push(pkt);
-    state.senders.insert(voice_seq, sender);
+    state
+        .streams
+        .entry(sender)
+        .or_insert_with(|| JitterBuffer::new(40, true))
+        .push(pkt);
 }
 
 /// Pop ready packets from every channel's jitter buffer and relay them.
 pub async fn pop_and_relay(socket: &UdpSocket, channels: &ChannelMap, now_ms: u64) {
     let mut lock = channels.write().await;
-    for (_channel_id, state) in lock.iter_mut() {
-        while let Some(pkt) = state.jitter.pop_ready(now_ms) {
-            let sender = state.senders.remove(&pkt.voice_seq).unwrap_or_else(|| {
-                tracing::warn!("sender not found for seq={}", pkt.voice_seq);
-                SocketAddr::from(([0, 0, 0, 0], 0))
-            });
-            for &addr in state.members.keys() {
-                if addr != sender
-                    && let Err(e) = socket.send_to(&pkt.opus_data, addr).await
-                {
-                    debug!("relay send error to {addr}: {e}");
+    for state in lock.values_mut() {
+        for (sender, jitter) in &mut state.streams {
+            while let Some(pkt) = jitter.pop_ready(now_ms) {
+                for &addr in state.members.keys() {
+                    if addr != *sender
+                        && let Err(e) = socket.send_to(&pkt.opus_data, addr).await
+                    {
+                        debug!("relay send error to {addr}: {e}");
+                    }
                 }
             }
         }
@@ -89,8 +90,7 @@ pub async fn touch_member(channels: &ChannelMap, channel_id: u64, addr: SocketAd
         .entry(channel_id)
         .or_insert_with(|| ChannelState {
             members: HashMap::new(),
-            jitter: JitterBuffer::new(40, true),
-            senders: HashMap::new(),
+            streams: HashMap::new(),
         })
         .members
         .insert(addr, Instant::now());
@@ -119,7 +119,7 @@ pub async fn remove_member_from_all(channels: &ChannelMap, addr: &SocketAddr) {
     let mut lock = channels.write().await;
     lock.retain(|_, state| {
         state.members.remove(addr);
-        state.senders.retain(|_, s| s != addr);
+        state.streams.remove(addr);
         !state.members.is_empty()
     });
 }
@@ -143,7 +143,7 @@ mod tests {
             let lock = channels.read().await;
             let state = lock.get(&42).unwrap();
             assert!(state.members.contains_key(&addr));
-            assert!(state.jitter.is_empty());
+            assert!(state.streams.is_empty());
         }
     }
 
@@ -156,7 +156,7 @@ mod tests {
         {
             let lock = channels.read().await;
             let state = lock.get(&7).unwrap();
-            assert_eq!(state.jitter.len(), 1);
+            assert_eq!(state.streams.get(&addr).unwrap().len(), 1);
         }
     }
 
@@ -198,6 +198,69 @@ mod tests {
             let lock = channels.read().await;
             assert!(lock.is_empty());
         }
+    }
+
+    #[tokio::test]
+    async fn simultaneous_speakers_with_same_sequence_both_reach_listener() {
+        let channels = new_channel_map();
+        let relay = UdpSocket::bind("127.0.0.1:0").await.unwrap();
+        let listener = UdpSocket::bind("127.0.0.1:0").await.unwrap();
+        let first_socket = UdpSocket::bind("127.0.0.1:0").await.unwrap();
+        let second_socket = UdpSocket::bind("127.0.0.1:0").await.unwrap();
+        let first = first_socket.local_addr().unwrap();
+        let second = second_socket.local_addr().unwrap();
+        touch_member(&channels, 7, first).await;
+        touch_member(&channels, 7, second).await;
+        touch_member(&channels, 7, listener.local_addr().unwrap()).await;
+        push_packet(&channels, 7, first, 1, 1000, b"first", 0).await;
+        push_packet(&channels, 7, second, 1, 1000, b"second", 0).await;
+        pop_and_relay(&relay, &channels, 100).await;
+
+        let mut received = Vec::new();
+        for _ in 0..2 {
+            let mut buffer = [0; 32];
+            let (len, _) =
+                tokio::time::timeout(Duration::from_secs(1), listener.recv_from(&mut buffer))
+                    .await
+                    .expect("both speakers must be relayed")
+                    .unwrap();
+            received.push(buffer[..len].to_vec());
+        }
+        received.sort();
+        assert_eq!(received, vec![b"first".to_vec(), b"second".to_vec()]);
+        for (speaker, expected) in [
+            (&first_socket, b"second".as_slice()),
+            (&second_socket, b"first".as_slice()),
+        ] {
+            let mut buffer = [0; 32];
+            let (len, _) =
+                tokio::time::timeout(Duration::from_secs(1), speaker.recv_from(&mut buffer))
+                    .await
+                    .expect("speaker must receive the other participant")
+                    .unwrap();
+            assert_eq!(&buffer[..len], expected);
+        }
+    }
+
+    #[tokio::test]
+    async fn departing_speaker_drops_buffered_audio() {
+        let channels = new_channel_map();
+        let relay = UdpSocket::bind("127.0.0.1:0").await.unwrap();
+        let listener = UdpSocket::bind("127.0.0.1:0").await.unwrap();
+        let speaker = test_addr(1);
+        touch_member(&channels, 7, speaker).await;
+        touch_member(&channels, 7, listener.local_addr().unwrap()).await;
+        push_packet(&channels, 7, speaker, 1, 1000, b"departed", 0).await;
+        remove_member_from_all(&channels, &speaker).await;
+        pop_and_relay(&relay, &channels, 100).await;
+
+        let mut buffer = [0; 32];
+        assert!(
+            tokio::time::timeout(Duration::from_millis(100), listener.recv_from(&mut buffer))
+                .await
+                .is_err(),
+            "departed speaker must not be relayed"
+        );
     }
 
     #[test]

@@ -29,18 +29,10 @@ pub async fn join(
     state: &State,
     addr: SocketAddr,
 ) -> Result<()> {
-    let prev_channel = session::get(&state.sessions, session_id)
-        .await
-        .and_then(|s| s.channel_id);
-
-    if prev_channel.as_deref() == Some(channel_id) {
+    let Some(sess) = session::get(&state.sessions, session_id).await else {
         return Ok(());
-    }
-
-    if let Some(prev) = prev_channel {
-        channels::leave(&state.channels, &prev, session_id).await;
-        broadcast_leave(state, &prev, session_id).await;
-    }
+    };
+    let prev_channel = sess.channel_id;
 
     let ch = match channels::get_channel(&state.channels, channel_id).await {
         Some(c) => c,
@@ -59,6 +51,40 @@ pub async fn join(
             return Ok(());
         }
     };
+
+    // Validate the destination before changing membership or exposing its history.
+    // Role assignments alone are insufficient: a kicked user can retain stale roles.
+    if let Some(guild_id) = ch.guild_id.as_deref() {
+        let is_member = state
+            .storage
+            .list_user_guilds(&sess.user_id)
+            .await?
+            .iter()
+            .any(|guild| guild.id == guild_id);
+        if !is_member {
+            io::send_encrypted(
+                stream,
+                PacketId::Error,
+                seq,
+                &to_payload(&proto::ErrorPayload {
+                    code: proto::ErrorCode::PermissionDenied as u32,
+                    message: "guild membership required".into(),
+                }),
+                crypto,
+            )
+            .await?;
+            return Ok(());
+        }
+    }
+
+    if prev_channel.as_deref() == Some(channel_id) {
+        return Ok(());
+    }
+
+    if let Some(prev) = prev_channel {
+        channels::leave(&state.channels, &prev, session_id).await;
+        broadcast_leave(state, &prev, session_id).await;
+    }
 
     channels::join(&state.channels, channel_id, session_id).await;
     set_channel(state, session_id, Some(channel_id.into())).await;
@@ -130,3 +156,6 @@ pub async fn join(
     info!("session {} joined {channel_id}", &session_id[..8]);
     Ok(())
 }
+
+#[cfg(test)]
+mod tests;

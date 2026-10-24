@@ -445,7 +445,13 @@ pub struct ChannelRecord {
 }
 
 impl Storage {
-    pub async fn create_channel(&self, id: &str, name: &str, kind: &str, guild_id: Option<&str>) -> Result<bool> {
+    pub async fn create_channel(
+        &self,
+        id: &str,
+        name: &str,
+        kind: &str,
+        guild_id: Option<&str>,
+    ) -> Result<bool> {
         match &self.pool {
             Pool::Sqlite(p) => {
                 let result = sqlx::query(
@@ -552,7 +558,8 @@ impl Storage {
                 "voice" => ChannelKind::Voice,
                 _ => ChannelKind::Text,
             };
-            crate::domain::channels::create(channel_store, &ch.id, &ch.name, kind, ch.guild_id).await;
+            crate::domain::channels::create(channel_store, &ch.id, &ch.name, kind, ch.guild_id)
+                .await;
         }
         Ok(())
     }
