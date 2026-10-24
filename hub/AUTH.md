@@ -24,3 +24,5 @@ The Hub binds only to loopback. Its reverse proxy must overwrite `X-Forwarded-Fo
 Back up SQLite with the issuer identity, protect backups as credentials, and apply the account-deletion policy to them. Expired attempts/sessions are pruned on new login attempts; expiry is independently enforced on every consumption/read. Revoking a GitHub authorization does not currently revoke an already created Vnox session; sign out or delete its database session to revoke it.
 
 `cargo test -p vnox-hub` exercises the complete local browser flow against an injected provider, wrong-browser/replay/expiry rejection and logout CSRF. A real GitHub login requires the account owner to authorize in their browser; automated tests never impersonate consent.
+
+Provider reference: [GitHub App user authorization and PKCE](https://docs.github.com/en/apps/creating-github-apps/authenticating-with-a-github-app/generating-a-user-access-token-for-a-github-app). GitHub App resource permissions are configured by its owner; this flow adds no OAuth scopes and only calls the public user endpoint.
