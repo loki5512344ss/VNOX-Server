@@ -1,7 +1,7 @@
 use anyhow::{Result, bail};
 use url::Url;
 
-use super::layout::{self, Content};
+use super::layout::{self, Content, Lang, Link};
 use crate::config::parse_origin;
 
 /// A rendered transactional message; no recipient or delivery happens here.
@@ -70,13 +70,17 @@ pub fn render(origin: &Url, kind: Kind<'_>) -> Result<Email> {
     let paragraph_refs = paragraphs.iter().map(String::as_str).collect::<Vec<_>>();
     let origin_text = origin.as_str().trim_end_matches('/');
     let content = Content {
+        lang: Lang::Ru,
         title,
         preheader: title,
         paragraphs: &paragraph_refs,
         code,
-        button,
-        url: url.as_str(),
+        link: Some(Link {
+            button,
+            url: url.as_str(),
+        }),
         expiry,
+        warning: "Не запрашивал это действие? Не передавай код или ссылку другим людям. Если это письмо о новом устройстве, проверь активные сеансы.",
         origin: origin_text,
     };
     let text = format!(
@@ -90,6 +94,54 @@ pub fn render(origin: &Url, kind: Kind<'_>) -> Result<Email> {
         subject: format!("Vnox — {title}"),
         text,
         html: layout::render(&content),
+    })
+}
+
+/// Sign-in code message for the passwordless email flow. It carries no link and no
+/// button: the code is typed into the page that requested it, never opened from a URL.
+pub fn render_email_code(origin: &Url, code: &str, lang: Lang) -> Result<Email> {
+    parse_origin(origin.as_str())?;
+    if code.len() != 8 || !code.bytes().all(|byte| byte.is_ascii_digit()) {
+        bail!("email code must contain exactly eight ASCII digits");
+    }
+    let (title, paragraph, expiry, warning, subject, label) = match lang {
+        Lang::Ru => (
+            "Код для входа в Vnox",
+            "Введи этот код на странице входа. Он подойдёт только в том браузере, где ты запросил вход.",
+            "Код действует 10 минут и срабатывает один раз.",
+            "Не запрашивал вход? Просто проигнорируй письмо и никому не сообщай код.",
+            "Vnox: код для входа",
+            "Код",
+        ),
+        Lang::En => (
+            "Your Vnox sign-in code",
+            "Enter this code on the sign-in page. It only works in the browser where you asked to sign in.",
+            "The code is valid for 10 minutes and works once.",
+            "Did not ask to sign in? Ignore this message and never share the code.",
+            "Vnox: sign-in code",
+            "Code",
+        ),
+    };
+    let origin_text = origin.as_str().trim_end_matches('/');
+    let paragraphs = [paragraph];
+    let html = layout::render(&Content {
+        lang,
+        title,
+        preheader: title,
+        paragraphs: &paragraphs,
+        code: Some(code),
+        link: None,
+        expiry,
+        warning,
+        origin: origin_text,
+    });
+    let text = format!(
+        "Vnox\n\n{title}\n\n{paragraph}\n\n{label}: {code}\n\n{expiry}\n\n{warning}\n\n{origin_text}\n"
+    );
+    Ok(Email {
+        subject: subject.to_owned(),
+        text,
+        html,
     })
 }
 

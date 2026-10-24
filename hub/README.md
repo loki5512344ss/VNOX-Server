@@ -14,10 +14,12 @@ Community messages and voice never pass through this process.
 - Durable SQLite schema and issuer identity with a private `0600` key file.
 - TLS-only SMTP transport and HTML/plain-text transactional email templates.
 
-Email authentication, GitHub OAuth, server registration/discovery, friends, DM
-storage and marketplace API are **not enabled**. There is no public endpoint for
-sending mail. Existing schema tables are foundations, not working authentication.
-Template links are previews of future routes; they do not create working tokens.
+GitHub OAuth and email one-time-code sign-in are implemented (`AUTH.md`); email sign-in
+is reported as enabled in `/v1/info` only when SMTP is configured. Server
+registration/discovery, friends, DM storage and marketplace API are **not enabled**.
+There is no public endpoint for sending mail. Other schema tables are foundations.
+Links in the older verify/new-device templates are previews of future routes; they do
+not create working tokens.
 
 ## Configuration
 

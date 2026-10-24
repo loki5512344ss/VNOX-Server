@@ -1,3 +1,4 @@
+pub mod email;
 pub mod provider;
 mod routes;
 pub mod store;
@@ -22,6 +23,8 @@ pub struct AuthService {
     pub pool: SqlitePool,
     pub origin: Url,
     pub provider: Option<Arc<dyn IdentityProvider>>,
+    /// Present only when a mail transport is configured.
+    pub email: Option<email::EmailAuth>,
     limits: Mutex<HashMap<String, (i64, u32)>>,
 }
 
@@ -48,8 +51,17 @@ impl AuthService {
             pool,
             origin,
             provider,
+            email: None,
             limits: Mutex::new(HashMap::new()),
         }
+    }
+    /// Enables email sign-in. Callers do this only when SMTP is configured (or a test sender).
+    pub fn with_email(mut self, email: email::EmailAuth) -> Self {
+        self.email = Some(email);
+        self
+    }
+    pub fn email_enabled(&self) -> bool {
+        self.email.is_some()
     }
     pub fn configured(&self) -> bool {
         self.provider.is_some()

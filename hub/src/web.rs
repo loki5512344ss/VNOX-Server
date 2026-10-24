@@ -75,7 +75,7 @@ async fn info(State(state): State<Arc<HubState>>) -> Json<Value> {
         "uptime_seconds": state.started.elapsed().as_secs(),
         "smtp": {"configured": state.smtp_configured, "public_send_endpoint": false},
         "capabilities": {
-            "email_auth": "not_enabled",
+            "email_auth": if state.auth.email_enabled() { "enabled" } else { "not_enabled" },
             "github_auth": if state.auth.configured() { "enabled" } else { "not_enabled" },
             "server_registry": "not_enabled",
             "friends": "not_enabled",

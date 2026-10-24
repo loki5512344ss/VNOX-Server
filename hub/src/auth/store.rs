@@ -41,6 +41,15 @@ pub async fn cleanup(pool: &SqlitePool) -> anyhow::Result<()> {
         .bind(now())
         .execute(pool)
         .await?;
+    sqlx::query("DELETE FROM email_attempts WHERE expires_at<=?")
+        .bind(now())
+        .execute(pool)
+        .await?;
+    // The longest rate-limit window is one hour.
+    sqlx::query("DELETE FROM email_send_log WHERE sent_at<=?")
+        .bind(now() - 3600)
+        .execute(pool)
+        .await?;
     Ok(())
 }
 
@@ -70,13 +79,6 @@ pub async fn consume_attempt(
 }
 
 pub async fn upsert_identity(pool: &SqlitePool, profile: &GitHubProfile) -> anyhow::Result<User> {
-    let subject = profile.id.to_string();
-    if let Some(user) = lookup_identity(pool, &subject).await? {
-        return Ok(user);
-    }
-    let id = Uuid::new_v4();
-    // Generated stable handle avoids claiming a privileged/reused handle from another provider.
-    let handle = format!("u_{}", id.simple());
     let name = profile
         .name
         .as_deref()
@@ -92,6 +94,28 @@ pub async fn upsert_identity(pool: &SqlitePool, profile: &GitHubProfile) -> anyh
                 && url.password().is_none()
         })
     });
+    upsert_external(pool, "github.com", &profile.id.to_string(), &name, avatar).await
+}
+
+/// Account for a verified, normalized email address. The display name is deliberately
+/// neutral: the local part of an address must never become a public profile string.
+pub async fn upsert_email_identity(pool: &SqlitePool, email: &str) -> anyhow::Result<User> {
+    upsert_external(pool, "email", email, "Vnox user", None).await
+}
+
+async fn upsert_external(
+    pool: &SqlitePool,
+    provider: &str,
+    subject: &str,
+    name: &str,
+    avatar: Option<&str>,
+) -> anyhow::Result<User> {
+    if let Some(user) = lookup_identity(pool, provider, subject).await? {
+        return Ok(user);
+    }
+    let id = Uuid::new_v4();
+    // Generated stable handle avoids claiming a privileged/reused handle from another provider.
+    let handle = format!("u_{}", id.simple());
     let mut transaction = pool.begin().await?;
     sqlx::query(
         "INSERT INTO accounts(user_id,handle,created_at,display_name,avatar_url) VALUES(?,?,?,?,?)",
@@ -103,21 +127,25 @@ pub async fn upsert_identity(pool: &SqlitePool, profile: &GitHubProfile) -> anyh
     .bind(avatar)
     .execute(&mut *transaction)
     .await?;
-    let inserted = sqlx::query("INSERT INTO external_identities(provider,subject,user_id,linked_at) VALUES('github.com',?,?,?) ON CONFLICT(provider,subject) DO NOTHING")
-        .bind(&subject).bind(id.to_string()).bind(now()).execute(&mut *transaction).await?;
+    let inserted = sqlx::query("INSERT INTO external_identities(provider,subject,user_id,linked_at) VALUES(?,?,?,?) ON CONFLICT(provider,subject) DO NOTHING")
+        .bind(provider).bind(subject).bind(id.to_string()).bind(now()).execute(&mut *transaction).await?;
     if inserted.rows_affected() == 0 {
         transaction.rollback().await?;
     } else {
         transaction.commit().await?;
     }
-    lookup_identity(pool, &subject)
+    lookup_identity(pool, provider, subject)
         .await?
         .ok_or_else(|| anyhow::anyhow!("identity transaction failed"))
 }
 
-async fn lookup_identity(pool: &SqlitePool, subject: &str) -> anyhow::Result<Option<User>> {
-    Ok(sqlx::query_as("SELECT a.user_id,a.handle,a.display_name,a.avatar_url FROM accounts a JOIN external_identities e ON e.user_id=a.user_id WHERE e.provider='github.com' AND e.subject=?")
-        .bind(subject).fetch_optional(pool).await?)
+async fn lookup_identity(
+    pool: &SqlitePool,
+    provider: &str,
+    subject: &str,
+) -> anyhow::Result<Option<User>> {
+    Ok(sqlx::query_as("SELECT a.user_id,a.handle,a.display_name,a.avatar_url FROM accounts a JOIN external_identities e ON e.user_id=a.user_id WHERE e.provider=? AND e.subject=?")
+        .bind(provider).bind(subject).fetch_optional(pool).await?)
 }
 
 pub async fn create_session(pool: &SqlitePool, user_id: &str) -> anyhow::Result<(String, String)> {

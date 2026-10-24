@@ -187,11 +187,23 @@ async fn capabilities_and_routes_do_not_pretend_authentication_is_ready() {
     }
     assert_eq!(value["smtp"]["public_send_endpoint"], false);
     assert!(value.get("secret_key").is_none());
-    for path in [
-        "/v1/auth/email/start",
-        "/v1/servers/register",
-        "/v1/mail/send",
-    ] {
+    // Email sign-in exists but stays closed until SMTP is configured; there is still no
+    // route that sends arbitrary mail.
+    for path in ["/v1/auth/email/start", "/v1/auth/email/verify"] {
+        let response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri(path)
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
+    }
+    for path in ["/v1/servers/register", "/v1/mail/send"] {
         let response = app
             .clone()
             .oneshot(

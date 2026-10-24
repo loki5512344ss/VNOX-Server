@@ -107,3 +107,28 @@ async fn smtp_probe_requires_tls_and_never_falls_back_to_cleartext_authenticatio
     assert!(!commands.contains("AUTH"));
     assert!(!commands.contains("MAIL FROM"));
 }
+
+#[test]
+fn email_code_messages_are_bilingual_and_carry_no_links() {
+    use vnox_hub::mail::layout::Lang;
+    let origin = parse_origin("https://central.loki-code.dev").unwrap();
+    for (lang, tag, phrase) in [
+        (Lang::Ru, "lang=\"ru\"", "10 минут"),
+        (Lang::En, "lang=\"en\"", "10 minutes"),
+    ] {
+        let email = templates::render_email_code(&origin, "12345678", lang).unwrap();
+        assert!(email.html.contains(tag) && email.html.contains(phrase));
+        assert!(email.text.contains("12345678") && email.html.contains("12345678"));
+        assert!(email.text.contains(phrase));
+        // No button and no copy-the-link block; only the bare origin in the footer.
+        assert_eq!(email.html.matches("href=\"").count(), 1);
+        assert!(!email.html.contains("?token=") && !email.html.contains("/login"));
+        assert!(!email.text.contains("http://") && !email.text.contains("?token"));
+        assert!(!email.subject.contains('\u{2014}'));
+    }
+    assert!(templates::render_email_code(&origin, "1234567", Lang::En).is_err());
+    assert!(templates::render_email_code(&origin, "1234567a", Lang::Ru).is_err());
+    assert_eq!(Lang::from_tag(Some("en")), Lang::En);
+    assert_eq!(Lang::from_tag(Some("de")), Lang::Ru);
+    assert_eq!(Lang::from_tag(None), Lang::Ru);
+}

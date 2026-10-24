@@ -2,7 +2,8 @@
 
 Current target: `central.loki-code.dev`, Ubuntu22.04, Nginx443 terminating HTTPS;
 Hub listener `127.0.0.1:37623` (randomly selected free port). The foundation has no
-public email-send/auth/registry/friends/DM endpoints. See `hub/README.md` for exact
+public email-send/registry/friends/DM endpoints. Sign-in endpoints are GitHub and, when SMTP
+is configured, email one-time codes (`hub/AUTH.md`). See `hub/README.md` for exact
 capability status. SMTP sender display name is Vnox, address `noreply@loki-code.dev`.
 
 ## Layout

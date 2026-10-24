@@ -43,15 +43,20 @@ async fn main() -> Result<()> {
     let database = database::open(&config.data_dir, &issuer).await?;
     // Validate configured SMTP eagerly without making startup depend on the
     // availability of an external provider. There is no public mail endpoint.
+    // Email sign-in is enabled exactly when SMTP is configured. The code MAC key lives in
+    // the private data directory next to the issuer identity and is generated on first use.
+    let mut auth = vnox_hub::auth::AuthService::new(
+        database.clone(),
+        config.origin.clone(),
+        config.github.as_ref(),
+    )?;
     if let Some(smtp) = &config.smtp {
-        mail::Mailer::new(smtp)?;
+        let mailer = Arc::new(mail::Mailer::new(smtp)?);
+        let key = vnox_hub::identity::load_or_create_secret(&config.data_dir, "email-auth.key")?;
+        auth = auth.with_email(vnox_hub::auth::email::EmailAuth::new(key, mailer));
     }
     let state = Arc::new(web::HubState {
-        auth: Arc::new(vnox_hub::auth::AuthService::new(
-            database.clone(),
-            config.origin.clone(),
-            config.github.as_ref(),
-        )?),
+        auth: Arc::new(auth),
         database,
         issuer,
         smtp_configured: config.smtp.is_some(),

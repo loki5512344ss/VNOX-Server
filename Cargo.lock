@@ -2984,6 +2984,7 @@ dependencies = [
  "cookie",
  "ed25519-dalek",
  "hex",
+ "hmac",
  "lettre",
  "oauth2",
  "rand 0.10.3",
