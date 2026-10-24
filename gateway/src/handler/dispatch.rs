@@ -21,6 +21,12 @@ pub async fn dispatch<S: AsyncRead + AsyncWrite + Unpin>(
     addr: std::net::SocketAddr,
 ) -> Result<()> {
     match pid {
+        PacketId::WebhookCreate
+        | PacketId::WebhookList
+        | PacketId::WebhookRotate
+        | PacketId::WebhookRevoke => {
+            crate::webhooks::management::handle(ctx, session_id, pid, payload).await?;
+        }
         PacketId::Ping => {
             let ping = PingPayload::decode(payload)?;
             io::send_encrypted(

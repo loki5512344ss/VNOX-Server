@@ -1,0 +1,21 @@
+# Community webhook API v1
+
+Additive LNEx packets `0x0200..0x0205` manage channel-scoped integrations over an already authenticated encrypted session. `MANAGE_WEBHOOKS` is permission bit11. Management requires a persisted text channel in a guild, actual current membership, and the permission (or guild ownership). The operational HTTP listener never exposes management APIs.
+
+- `WebhookCreate`: channel_id, name, direction (`incoming`/`outgoing`), provider (`generic`/`github`), endpoint for outgoing.
+- `WebhookList`: channel_id; returns descriptors without secrets.
+- `WebhookRotate`/`WebhookRevoke`: id; authorization is rechecked against its channel.
+- `WebhookResult`: descriptor plus new secret only for create/rotate.
+- `WebhookListResult`: descriptors. Descriptors include suspension state. All management requests use the additive `WebhookRequest` message; the packet identifies the operation.
+
+Only incoming delivery is public HTTP: `POST /v1/webhooks/{webhook_id}`. Generic integrations use `Authorization: Bearer <secret>` and JSON `{ "content": "..." }`; unknown identity/avatar/mention fields are rejected. Optional `Idempotency-Key` deduplicates retries. GitHub adapters verify `X-Hub-Signature-256` over raw bytes and use `X-GitHub-Delivery` for deduplication. GitHub initially supports push, pull_request, issues, release and ping summaries. Delivery body is capped64KiB, content4000characters; mass mention syntax is denied. A webhook sender has a reserved `webhook:<id>` identity, never a user-provided sender ID. Production publishing requires HTTPS proxying; bearer tokens must not appear in URLs or access logs.
+
+Incoming generic secrets are random256-bit values stored only as SHA256 hashes. GitHub HMAC and outgoing signing keys require reversible storage and are AEAD-sealed using `VNOX_WEBHOOK_SECRET_KEY` (64hexcharacters, protected environment). Those modes are unavailable if the master key is not configured. Key rotation replaces the active secret and invalidates the old token immediately. No DM/Hub/private-account access is granted.
+
+Outgoing hooks initially subscribe only to `message.created` in their configured channel. The message and outbox row commit together. Payload includes id, occurred_at and channel/message/sender/content fields. Oversized ordinary chat content is bounded with an explicit content_truncated flag; message IDs are bounded to 128 characters with id_truncated. Event/delivery IDs are server-generated. Signatures use `X-Vnox-Signature: sha256=<HMAC(timestamp+'.'+raw_body)>`, `X-Vnox-Timestamp` and `X-Vnox-Delivery`. Consumers validate time and deduplicate the `X-Vnox-Delivery` value. Retries are bounded; delivery is at least once, so duplicate sends remain possible after uncertain failures.
+
+Only HTTPS public destinations are accepted. Each delivery re-resolves and validates every address, pins the request to that resolution, disables proxies and redirects, and applies request timeouts. Loopback/private/link-local/multicast/documentation/special addresses are rejected. Secrets/target query strings are not logged. Outbox capacity is bounded; a full hook is suspended for new events rather than blocking core chat, and management listing exposes the reason. Rotation explicitly resumes a suspended hook. Completed/terminal delivery rows are deleted, including their payload. The worker supports one active gateway process per database; shared-database multi-worker claiming is not supported. Incoming receipt retention is 24 hours with a hard cap of 4096 receipts per hook; retry identifiers outside this window may create a new message.
+
+This contract adds server functionality; existing desktop clients do not yet have webhook-management UI. JSON/Protobuf mismatch elsewhere is not repaired by these packets. Community hooks are separate from Hub authentication and are not deployed to central.loki-code.dev.
+
+Permission and membership changes apply at subsequent authorization checks; an already authorized delivery may finish while a role change is in progress. Credential rotation/revocation is revalidated inside the persistence transaction. Active-hook creation and outbox capacity checks share a database transaction lock, including PostgreSQL advisory locking; PostgreSQL concurrency still requires a live integration fixture.

@@ -1,6 +1,12 @@
 #[repr(u16)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PacketId {
+    WebhookCreate = 0x0200,
+    WebhookList = 0x0201,
+    WebhookRotate = 0x0202,
+    WebhookRevoke = 0x0203,
+    WebhookResult = 0x0204,
+    WebhookListResult = 0x0205,
     Hello = 0x0001,
     Auth = 0x0002,
     Session = 0x0003,
@@ -74,6 +80,12 @@ pub enum PacketId {
 impl PacketId {
     pub fn from_u16(v: u16) -> Option<Self> {
         match v {
+            0x0200 => Some(Self::WebhookCreate),
+            0x0201 => Some(Self::WebhookList),
+            0x0202 => Some(Self::WebhookRotate),
+            0x0203 => Some(Self::WebhookRevoke),
+            0x0204 => Some(Self::WebhookResult),
+            0x0205 => Some(Self::WebhookListResult),
             0x0001 => Some(Self::Hello),
             0x0002 => Some(Self::Auth),
             0x0003 => Some(Self::Session),

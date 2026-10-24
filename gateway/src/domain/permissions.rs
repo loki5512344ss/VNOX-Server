@@ -14,6 +14,7 @@ bitflags! {
         const VOICE_SPEAK      = 1 << 8;
         const VOICE_MUTE       = 1 << 9;
         const VOICE_DEAFEN     = 1 << 10;
+        const MANAGE_WEBHOOKS  = 1 << 11;
         const ADMINISTRATOR    = 1 << 63;
     }
 }

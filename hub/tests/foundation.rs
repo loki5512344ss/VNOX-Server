@@ -96,6 +96,14 @@ async fn state() -> (TempDir, Arc<HubState>) {
     (
         directory,
         Arc::new(HubState {
+            auth: Arc::new(
+                vnox_hub::auth::AuthService::new(
+                    pool.clone(),
+                    url::Url::parse("https://central.loki-code.dev").unwrap(),
+                    None,
+                )
+                .unwrap(),
+            ),
             database: pool,
             issuer,
             smtp_configured: true,

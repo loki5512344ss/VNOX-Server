@@ -4,6 +4,7 @@ pub mod domain;
 pub mod handler;
 pub mod net;
 pub mod proto;
+pub mod webhooks;
 
 use anyhow::Result;
 use std::sync::Arc;
@@ -87,6 +88,13 @@ pub async fn run(cfg: Arc<config::Config>, voice_member_tx: Option<VoiceMemberTx
         voice_member_tx,
     );
 
+    state
+        .storage
+        .load_channels_to_cache(&state.channels)
+        .await?;
+    state.webhooks.configure_from_env()?;
+    tokio::spawn(webhooks::outgoing::run(state.clone()));
+
     if let Ok(rows) = state.storage.load_all_presences().await {
         let mut presences = state.presences.write().await;
         for row in rows {
@@ -118,7 +126,7 @@ pub async fn run(cfg: Arc<config::Config>, voice_member_tx: Option<VoiceMemberTx
         sessions_count,
         channels_count,
     };
-    tokio::spawn(admin::run(admin_bind, admin_state));
+    tokio::spawn(admin::run(admin_bind, admin_state, state.clone()));
 
     let listener = TcpListener::bind(&cfg.gateway.bind).await?;
     info!("listening on {}", cfg.gateway.bind);

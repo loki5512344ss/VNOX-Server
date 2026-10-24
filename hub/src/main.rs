@@ -47,6 +47,11 @@ async fn main() -> Result<()> {
         mail::Mailer::new(smtp)?;
     }
     let state = Arc::new(web::HubState {
+        auth: Arc::new(vnox_hub::auth::AuthService::new(
+            database.clone(),
+            config.origin.clone(),
+            config.github.as_ref(),
+        )?),
         database,
         issuer,
         smtp_configured: config.smtp.is_some(),

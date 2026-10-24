@@ -393,3 +393,26 @@ message E2eeDmHistory {
   repeated E2eeDmMessage messages = 2;
   optional int64  limit         = 3;
 }
+
+// Channel-scoped webhook management: authenticated LNEx only. Secrets returned once.
+message WebhookRequest {
+  string id = 1;
+  string channel_id = 2;
+  string name = 3;
+  string direction = 4; // incoming | outgoing
+  string provider = 5; // generic | github (incoming only)
+  string endpoint = 6; // outgoing HTTPS URL
+}
+message WebhookInfo {
+  string id = 1;
+  string channel_id = 2;
+  string name = 3;
+  string direction = 4;
+  string provider = 5;
+  string endpoint = 6;
+  int64 created_at = 7;
+  bool revoked = 8;
+  string suspended_reason = 9;
+}
+message WebhookResult { WebhookInfo hook = 1; string secret = 2; }
+message WebhookListResult { repeated WebhookInfo hooks = 1; }

@@ -9,6 +9,7 @@ pub struct Config {
     pub data_dir: PathBuf,
     pub origin: Url,
     pub smtp: Option<SmtpConfig>,
+    pub github: Option<crate::auth::GitHubConfig>,
 }
 
 /// SMTP credentials are only read from the service environment, never command arguments.
@@ -72,7 +73,23 @@ impl Config {
                 from: get("MAIL_FROM").unwrap_or_else(|| "Vnox <noreply@loki-code.dev>".into()),
             })
         };
+        let github = match (get("GITHUB_CLIENT_ID"), get("GITHUB_CLIENT_SECRET")) {
+            (None, None) => None,
+            (Some(id), Some(secret))
+                if !id.is_empty()
+                    && !secret.is_empty()
+                    && !id.chars().any(char::is_whitespace)
+                    && !secret.chars().any(char::is_whitespace) =>
+            {
+                Some(crate::auth::GitHubConfig {
+                    client_id: id,
+                    client_secret: secret,
+                })
+            }
+            _ => bail!("GITHUB_CLIENT_ID and GITHUB_CLIENT_SECRET must be configured together"),
+        };
         Ok(Self {
+            github,
             bind,
             origin,
             smtp,

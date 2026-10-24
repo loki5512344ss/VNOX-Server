@@ -43,5 +43,10 @@ rustls = "0.23"
 tokio-rustls = "0.26"
 rcgen = "0.14"
 
+subtle.workspace = true
+hmac.workspace = true
+reqwest.workspace = true
+url = "2"
+
 [build-dependencies]
 prost-build = "0.14"

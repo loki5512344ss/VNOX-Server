@@ -5,6 +5,7 @@ pub mod guilds;
 pub mod messages;
 pub mod presence;
 pub mod social;
+pub mod webhooks;
 
 use anyhow::Result;
 use sqlx::{PgPool, SqlitePool};
@@ -29,6 +30,7 @@ impl Storage {
             pool: Pool::Sqlite(pool),
         };
         s.migrate().await?;
+        s.migrate_webhooks().await?;
         info!("storage (sqlite): {path}");
         Ok(s)
     }
@@ -39,6 +41,7 @@ impl Storage {
             pool: Pool::Postgres(pool),
         };
         s.migrate().await?;
+        s.migrate_webhooks().await?;
         info!("storage (postgres): connected");
         Ok(s)
     }

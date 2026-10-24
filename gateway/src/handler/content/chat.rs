@@ -41,7 +41,9 @@ pub async fn handle(session_id: &str, mut msg: ChatMessagePayload, state: &State
         msg.timestamp = now_ms();
     }
 
-    state.storage.save_message(&msg).await?;
+    if !state.storage.save_webhook_message(&msg, None).await? {
+        return Ok(());
+    }
     state.metrics.inc(&state.metrics.messages_sent);
 
     let _ = state.broadcast.send(BroadcastMsg {

@@ -16,6 +16,7 @@ use crate::identity::Issuer;
 
 pub struct HubState {
     pub database: SqlitePool,
+    pub auth: Arc<crate::auth::AuthService>,
     pub issuer: Issuer,
     pub smtp_configured: bool,
     pub started: Instant,
@@ -23,6 +24,7 @@ pub struct HubState {
 
 pub fn router(state: Arc<HubState>) -> Router {
     Router::new()
+        .merge(crate::auth::router())
         .route("/", get(index))
         .route("/health", get(health))
         .route("/ready", get(ready))
@@ -74,7 +76,7 @@ async fn info(State(state): State<Arc<HubState>>) -> Json<Value> {
         "smtp": {"configured": state.smtp_configured, "public_send_endpoint": false},
         "capabilities": {
             "email_auth": "not_enabled",
-            "github_auth": "not_enabled",
+            "github_auth": if state.auth.configured() { "enabled" } else { "not_enabled" },
             "server_registry": "not_enabled",
             "friends": "not_enabled",
             "direct_messages": "not_enabled",

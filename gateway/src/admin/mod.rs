@@ -26,12 +26,13 @@ pub struct AdminState {
     pub channels_count: std::sync::Arc<std::sync::atomic::AtomicUsize>,
 }
 
-pub async fn run(bind: String, state: AdminState) {
+pub async fn run(bind: String, state: AdminState, gateway: crate::net::state::State) {
     let app = Router::new()
         .route("/health", get(health))
         .route("/metrics", get(metrics))
         .route("/version", get(version))
-        .with_state(state);
+        .with_state(state)
+        .merge(crate::webhooks::incoming::router(gateway));
 
     let listener = match TcpListener::bind(&bind).await {
         Ok(l) => l,
