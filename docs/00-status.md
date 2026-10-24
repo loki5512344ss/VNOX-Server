@@ -13,7 +13,8 @@ Last updated: 2026-10-24.
 - Authenticated, encrypted UDP voice relay in voice-node.
 - Voice access is revoked when a channel is deleted, a member is kicked or permissions change.
 - Senders get acknowledgements for their own chat messages.
-- Hub email sign-in by one-time code (HMAC-protected, rate-limited; enabled only when SMTP is configured; code-ready, not yet enabled in production). Handle/avatar selection after first sign-in is not implemented.
+- Hub email sign-in by one-time code (HMAC-protected, rate-limited; enabled only when SMTP is configured; code-ready, not yet enabled in production). Handle selection after first sign-in is not implemented.
+- Hub own avatar (web): upload, remove and public serving of a re-encoded 256x256 PNG; code-ready, not deployed. Backup rotation to 30 days for deleted data is decided but not implemented.
 - Channel webhooks, GitHub sign-in, hub service, screen sharing and media broadcast.
 - `cargo audit`: no known vulnerabilities in both workspaces (2026-10-24).
 

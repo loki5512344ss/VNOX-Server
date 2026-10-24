@@ -106,6 +106,7 @@ async fn index() -> Html<&'static str> {
 
 async fn headers(request: Request<Body>, next: Next) -> Response {
     let mut response = next.run(request).await;
+    // Handlers that set their own cache policy or CSP (avatar delivery) keep them.
     for (name, value) in [
         ("cache-control", "no-store"),
         ("x-content-type-options", "nosniff"),
@@ -115,6 +116,10 @@ async fn headers(request: Request<Body>, next: Next) -> Response {
             "default-src 'none'; style-src 'unsafe-inline'; img-src 'self'; frame-ancestors 'none'",
         ),
     ] {
+        let present = response.headers().contains_key(name);
+        if present && matches!(name, "cache-control" | "content-security-policy") {
+            continue;
+        }
         response
             .headers_mut()
             .insert(name, HeaderValue::from_static(value));

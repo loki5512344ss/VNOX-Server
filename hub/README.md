@@ -12,6 +12,7 @@ Community messages and voice never pass through this process.
 - `/v1/info`: public issuer ID/key and honest feature availability.
 - `/`: deployment status page; `/assets/vnox-mark.svg`: approved V connection mark.
 - Durable SQLite schema and issuer identity with a private `0600` key file.
+- Own avatar for signed-in web sessions: `POST`/`DELETE /v1/account/avatar`, public `GET /v1/avatars/<id>` (re-encoded 256x256 PNG in SQLite, see `AUTH.md`).
 - TLS-only SMTP transport and HTML/plain-text transactional email templates.
 
 GitHub OAuth and email one-time-code sign-in are implemented (`AUTH.md`); email sign-in

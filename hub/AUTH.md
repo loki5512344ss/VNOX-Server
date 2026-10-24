@@ -55,7 +55,7 @@ Per address 1 per 60 s and 5 per hour; per source (`X-Forwarded-For`, as GitHub 
 
 Addresses are trimmed and lowercased; only ASCII, a local part of `[a-z0-9._%+-]` without leading/trailing/double dots, at most 64 characters, a multi-label hostname whose last label is alphabetic, at most 254 characters in total. `+tag` is not stripped and Gmail dots are not folded. Unusual legal addresses are rejected on purpose.
 
-The identity is `external_identities(provider='email', subject=<normalized address>)`, reusing the existing table so one address maps to one account, and it can never collide with `github.com` subjects. A matching GitHub account or email is never merged automatically. A first successful verification creates an account with a generated `u_<uuid>` handle and the neutral display name `Vnox user`; the local part of the address is never used. Choosing a handle, display name and avatar after registration is not implemented yet (see `design/accounts-and-avatars.md`). The address is kept in plain normalized form in `external_identities` because later features (security notices, adding a second sign-in method) need it; it is used for nothing except sending codes today.
+The identity is `external_identities(provider='email', subject=<normalized address>)`, reusing the existing table so one address maps to one account, and it can never collide with `github.com` subjects. A matching GitHub account or email is never merged automatically. A first successful verification creates an account with a generated `u_<uuid>` handle and the neutral display name `Vnox user`; the local part of the address is never used. Choosing a handle and display name after registration is not implemented yet (an own avatar can be uploaded, see below) (see `design/accounts-and-avatars.md`). The address is kept in plain normalized form in `external_identities` because later features (security notices, adding a second sign-in method) need it; it is used for nothing except sending codes today.
 
 ### Mail and logging
 
@@ -68,3 +68,39 @@ The message is rendered by `mail::templates::render_email_code` (Russian or Engl
 - Rate-limit counters for the in-memory limiter reset on restart; the email ledger persists.
 - Access to the mailbox, or to the SQLite file together with `email-auth.key` during the ten-minute window, defeats the code.
 - Tests use an injected sender; real SMTP delivery has not been exercised from tests.
+
+## Own avatar
+
+A signed-in web session can set its own photo. Without one, `avatar_url` in `GET /v1/auth/session` (and in the email verify answer) is the provider's avatar (GitHub) or `null`; with one it is the same-origin path `/v1/avatars/<id>`.
+
+### Contract
+
+- `POST /v1/account/avatar`: the body is the raw image, `Content-Type` is `image/png`, `image/jpeg` or `image/webp`. Answers `200 {"avatar_url":"/v1/avatars/<id>"}`.
+- `DELETE /v1/account/avatar`: removes the own photo. Answers `200 {"avatar_url": <provider URL or null>}`; repeating it is harmless.
+- `GET /v1/avatars/<id>`: public. `<id>` is 64 lowercase hex characters, the SHA-256 of the stored bytes. `Cache-Control: public, max-age=31536000, immutable`, `Content-Type: image/png`, `X-Content-Type-Options: nosniff`, `Content-Security-Policy: default-src 'none'; sandbox; frame-ancestors 'none'`, `ETag`. Unknown or malformed ids give a `404` JSON error. After a replacement or removal the old URL gives `404` (browser caches may still hold it until they evict it).
+- The two changing endpoints require the exact `Origin`, the session cookie and `X-CSRF-Token`, checked in that order, exactly as logout (shared `authorized` gate). All their responses, errors included, are `no-store`.
+- Errors: `401 not_authenticated`, `403 invalid_origin` / `invalid_csrf`, `413 too_large`, `415 unsupported_type` / `type_mismatch`, `422 bad_dimensions` / `invalid_image`, `429 try_later`, `503 try_later`.
+
+### Upload pipeline
+
+1. Authentication, Origin and CSRF are checked before the body is read.
+2. The declared `Content-Type` must be one of the three types. A cheap refusal here does not spend rate-limit budget.
+3. Rate limit, in memory: 10 changes per hour per account and 30 per hour per source (`X-Forwarded-For`, /64 grouping for IPv6, as above). Uploads and removals both count; a refused request is not recorded. At most two decodes run at the same time, the rest get `429`.
+4. Body limit 2 MiB: refused from `Content-Length` when announced, and the read itself stops at the limit for chunked bodies.
+5. Magic bytes decide the real format (PNG, JPEG, WebP; SVG, GIF and everything else are `unsupported_type`). A different declared type is `type_mismatch`, so a renamed file does not pass.
+6. The header is read first: more than 4096 or fewer than 32 pixels on a side is `bad_dimensions` before any pixel buffer exists (decoder limits: 4096 per side, 128 MiB allocation). A small file that claims 60000x60000 never allocates.
+7. The image is fully decoded (corrupt or truncated data is `invalid_image`), rotated by its EXIF orientation, center-cropped to a square, resized to 256x256 (Lanczos3) and written as a new PNG (RGB, or RGBA when the source has transparency). Nothing from the source file is copied, so EXIF, GPS, ICC profiles, text chunks and trailing data are gone. The decode runs on a blocking thread. Animated sources yield a single still frame or are refused.
+8. The row is written with `INSERT ... ON CONFLICT(user_id) DO UPDATE`, so there is one avatar per account and the old bytes are overwritten in the same statement. The original upload is never stored.
+
+### Storage
+
+SQLite BLOB in table `avatars` (migration `0005_avatars.sql`), keyed by `user_id` with `ON DELETE CASCADE`. Reasons: a normalized avatar is small (typically 20 to 150 KB), so the database stays small; replacement and account deletion are transactional with the account row; there is no second directory whose permissions, orphan files or backup consistency need care; the existing data-directory rules and the existing backup (database plus issuer together) cover it with no new moving parts. Files stay `0600` because they are inside the private data directory like the database itself. If avatars ever grow in number or size, serving can move to files or object storage behind the same URLs.
+
+The provider avatar URL stays on `accounts.avatar_url` and is the fallback after removal.
+
+### Known limits
+
+- Rate-limit counters are in memory and reset on restart.
+- Avatars are public to anyone who knows the id; ids are not secret but are not listed anywhere. Identical images from two accounts share an id.
+- Deleted photos can remain in database backups. The project owner decided that backups keep deleted data for up to 30 days; this needs backup rotation to be implemented and is not enforced by the Hub.
+- Decoding uses the `image` crate with only the `png`, `jpeg` and `webp` features. `cargo audit` reported no advisories when this was added. Decoder bugs in these crates are the main residual risk; decoding is bounded in size, memory and concurrency.

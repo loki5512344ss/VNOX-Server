@@ -23,6 +23,8 @@ uuid = { workspace = true, features = ["serde"] }
 sqlx = { version = "0.9", default-features = false, features = ["sqlite", "runtime-tokio", "migrate", "macros"] }
 lettre = { version = "0.11.23", default-features = false, features = ["builder", "smtp-transport", "tokio1-rustls", "aws-lc-rs", "webpki-roots"] }
 url = "2"
+# Avatar re-encoding: only PNG, JPEG and WebP decoders and the PNG encoder; no GIF, SVG or other formats.
+image = { version = "0.25.10", default-features = false, features = ["png", "jpeg", "webp"] }
 
 reqwest.workspace = true
 sha2.workspace = true

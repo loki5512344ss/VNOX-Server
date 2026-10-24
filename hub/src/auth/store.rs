@@ -144,7 +144,8 @@ async fn lookup_identity(
     provider: &str,
     subject: &str,
 ) -> anyhow::Result<Option<User>> {
-    Ok(sqlx::query_as("SELECT a.user_id,a.handle,a.display_name,a.avatar_url FROM accounts a JOIN external_identities e ON e.user_id=a.user_id WHERE e.provider=? AND e.subject=?")
+    // The own avatar (same-origin path) wins over the provider URL kept on the account.
+    Ok(sqlx::query_as("SELECT a.user_id,a.handle,a.display_name,COALESCE('/v1/avatars/'||v.id,a.avatar_url) AS avatar_url FROM accounts a LEFT JOIN avatars v ON v.user_id=a.user_id JOIN external_identities e ON e.user_id=a.user_id WHERE e.provider=? AND e.subject=?")
         .bind(provider).bind(subject).fetch_optional(pool).await?)
 }
 
@@ -168,7 +169,7 @@ pub async fn get_session(
         avatar_url: Option<String>,
         csrf_token: String,
     }
-    let row: Option<Row> = sqlx::query_as("SELECT a.user_id,a.handle,a.display_name,a.avatar_url,s.csrf_token FROM web_sessions s JOIN accounts a ON a.user_id=s.user_id WHERE s.token_hash=? AND s.expires_at>?")
+    let row: Option<Row> = sqlx::query_as("SELECT a.user_id,a.handle,a.display_name,COALESCE('/v1/avatars/'||v.id,a.avatar_url) AS avatar_url,s.csrf_token FROM web_sessions s JOIN accounts a ON a.user_id=s.user_id LEFT JOIN avatars v ON v.user_id=a.user_id WHERE s.token_hash=? AND s.expires_at>?")
         .bind(hash(session)).bind(now()).fetch_optional(pool).await?;
     Ok(row.map(|r| {
         (

@@ -14,6 +14,7 @@ use cookie::{Cookie, SameSite};
 use oauth2::{CsrfToken, PkceCodeChallenge};
 use serde::Deserialize;
 use serde_json::json;
+mod avatar;
 use std::sync::Arc;
 use subtle::ConstantTimeEq;
 const BROWSER: &str = "__Host-vnox_oauth";
@@ -33,6 +34,11 @@ pub fn router() -> Router<Arc<HubState>> {
         )
         .route("/v1/auth/session", get(session))
         .route("/v1/auth/logout", post(logout))
+        .route(
+            "/v1/account/avatar",
+            post(avatar::upload).delete(avatar::remove),
+        )
+        .route("/v1/avatars/{id}", get(avatar::serve))
 }
 fn failure(status: StatusCode, code: &'static str) -> Response {
     (status, Json(json!({"error":code}))).into_response()
@@ -336,23 +342,44 @@ async fn session(State(state): State<Arc<HubState>>, headers: HeaderMap) -> Resp
     }
     Json(json!({"authenticated":false})).into_response()
 }
-async fn logout(State(state): State<Arc<HubState>>, headers: HeaderMap) -> Response {
-    if !same_origin(&state.auth, &headers) {
-        return failure(StatusCode::FORBIDDEN, "invalid_origin");
+/// Session gate for state-changing requests by a signed-in user: exact `Origin`, a live
+/// session, and the session's CSRF token in `X-CSRF-Token`. Returns the user and session token.
+async fn authorized(
+    state: &HubState,
+    headers: &HeaderMap,
+) -> Result<(store::User, String), Box<Response>> {
+    if !same_origin(&state.auth, headers) {
+        return Err(Box::new(failure(StatusCode::FORBIDDEN, "invalid_origin")));
     }
-    let Some(token) = cookie(&headers, SESSION) else {
-        return failure(StatusCode::UNAUTHORIZED, "not_authenticated");
+    let Some(token) = cookie(headers, SESSION) else {
+        return Err(Box::new(failure(
+            StatusCode::UNAUTHORIZED,
+            "not_authenticated",
+        )));
     };
-    let Ok(Some((_, csrf))) = store::get_session(&state.auth.pool, &token).await else {
-        return failure(StatusCode::UNAUTHORIZED, "not_authenticated");
+    let Ok(Some((user, csrf))) = store::get_session(&state.auth.pool, &token).await else {
+        return Err(Box::new(failure(
+            StatusCode::UNAUTHORIZED,
+            "not_authenticated",
+        )));
     };
     let supplied = headers
         .get("x-csrf-token")
         .map(|v| v.as_bytes())
         .unwrap_or_default();
     if !bool::from(csrf.as_bytes().ct_eq(supplied)) {
-        return failure(StatusCode::FORBIDDEN, "invalid_csrf");
+        return Err(Box::new(failure(StatusCode::FORBIDDEN, "invalid_csrf")));
     }
+    Ok((user, token))
+}
+fn allowed_avatar(auth: &AuthService, user_id: &str, headers: &HeaderMap) -> bool {
+    auth.allow_avatar(user_id, &client_ip(headers))
+}
+async fn logout(State(state): State<Arc<HubState>>, headers: HeaderMap) -> Response {
+    let token = match authorized(&state, &headers).await {
+        Ok((_, token)) => token,
+        Err(response) => return *response,
+    };
     if sqlx::query("DELETE FROM web_sessions WHERE token_hash=?")
         .bind(store::hash(&token))
         .execute(&state.auth.pool)

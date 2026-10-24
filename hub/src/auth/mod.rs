@@ -26,7 +26,16 @@ pub struct AuthService {
     /// Present only when a mail transport is configured.
     pub email: Option<email::EmailAuth>,
     limits: Mutex<HashMap<String, (i64, u32)>>,
+    avatar_events: Mutex<HashMap<String, Vec<i64>>>,
+    /// Bounds concurrent image decodes, which are the most expensive thing a session can ask for.
+    pub avatar_decoding: tokio::sync::Semaphore,
 }
+
+/// Avatar changes (upload or removal) per account and per source within one hour.
+const AVATAR_PER_USER_HOUR: usize = 10;
+const AVATAR_PER_SOURCE_HOUR: usize = 30;
+const AVATAR_WINDOW: i64 = 3600;
+const AVATAR_TRACKED_KEYS: usize = 8192;
 
 impl AuthService {
     pub fn new(
@@ -53,6 +62,8 @@ impl AuthService {
             provider,
             email: None,
             limits: Mutex::new(HashMap::new()),
+            avatar_events: Mutex::new(HashMap::new()),
+            avatar_decoding: tokio::sync::Semaphore::new(2),
         }
     }
     /// Enables email sign-in. Callers do this only when SMTP is configured (or a test sender).
@@ -84,6 +95,31 @@ impl AuthService {
         }
         global.1 += 1;
         limits.entry(ip.to_owned()).or_insert((now, 0)).1 += 1;
+        true
+    }
+    /// Records one avatar change attempt for `user` and `source` and reports whether both
+    /// budgets still had room. A refused attempt is not recorded, so a blocked client does
+    /// not extend its own block.
+    pub fn allow_avatar(&self, user: &str, source: &str) -> bool {
+        let Ok(mut events) = self.avatar_events.lock() else {
+            return false;
+        };
+        let now = store::now();
+        events.retain(|_, times| {
+            times.retain(|at| now - *at < AVATAR_WINDOW);
+            !times.is_empty()
+        });
+        let user_key = format!("u:{user}");
+        let source_key = format!("s:{source}");
+        let count = |key: &str| events.get(key).map_or(0, Vec::len);
+        if count(&user_key) >= AVATAR_PER_USER_HOUR
+            || count(&source_key) >= AVATAR_PER_SOURCE_HOUR
+            || events.len() + 2 > AVATAR_TRACKED_KEYS
+        {
+            return false;
+        }
+        events.entry(user_key).or_default().push(now);
+        events.entry(source_key).or_default().push(now);
         true
     }
 }
