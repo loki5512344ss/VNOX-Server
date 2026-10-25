@@ -206,5 +206,5 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - SQLite message history and user records.
 - Desktop client shell with egui UI and net layer.
 
-[Unreleased]: https://github.com/loki5512344/Vnox/compare/v0.1.0...HEAD
-[0.1.0]: https://github.com/loki5512344/Vnox/releases/tag/v0.1.0
+[Unreleased]: https://github.com/loki5512344ss/VNOX-Server/compare/v0.1.0...HEAD
+[0.1.0]: https://github.com/loki5512344ss/VNOX-Server/releases/tag/v0.1.0

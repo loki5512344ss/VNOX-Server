@@ -12,7 +12,7 @@ version      = "0.1.0"
 edition      = "2024"
 license      = "GPL-3.0"
 authors      = ["VNOX Contributors"]
-repository   = "https://github.com/loki5512344/Vnox"
+repository   = "https://github.com/loki5512344ss/VNOX-Server"
 rust-version = "1.94"
 
 [workspace.dependencies]
